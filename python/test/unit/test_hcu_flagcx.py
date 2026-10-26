@@ -142,7 +142,7 @@ class HCUFlagCXTests(unittest.TestCase):
                                                                                                  "gfx936\ngfx936\n")):
             self.assertEqual(self.build._device_arch(self.root), "gfx936")
 
-    def test_select_llvm_tools_matching_hipcc(self):
+    def test_select_nearest_consistent_llvm_tools(self):
         sdk = self.root / "sdk"
         for tool in ("bin/hipcc", "llvm/bin/opt", "llvm/bin/llvm-as", "llvm/bin/llvm-dis", "aillvm/bin/opt",
                      "aillvm/bin/llvm-as", "aillvm/bin/llvm-dis"):
@@ -159,8 +159,35 @@ class HCUFlagCXTests(unittest.TestCase):
         with patch.object(self.build.subprocess, "check_output", side_effect=version):
             self.assertEqual(self.build._toolchain(), (sdk, sdk / "aillvm/bin"))
             os.environ["FLAGCX_HCU_LLVM_BIN"] = str(sdk / "llvm/bin")
-            with self.assertRaisesRegex(RuntimeError, "matching hipcc's LLVM 17"):
-                self.build._toolchain()
+            self.assertEqual(self.build._toolchain(), (sdk, sdk / "llvm/bin"))
+
+    def test_dtk_hipcc17_with_aomp18_tools(self):
+        sdk = self.root / "sdk"
+        for tool in ("bin/hipcc", "aillvm/bin/opt", "aillvm/bin/llvm-as", "aillvm/bin/llvm-dis"):
+            path = sdk / tool
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+        os.environ["DEVICE_HOME"] = str(sdk)
+
+        def version(cmd, **kwargs):
+            if cmd[0].endswith("hipcc"):
+                return "HIP version: 6.1\nAMD clang version 17.0.0\n"
+            return "AOMP-18.0-12 (http://github.com/ROCm-Developer-Tools/aomp):\n  LLVM version 18.0.0\n"
+
+        with patch.object(self.build.subprocess, "check_output", side_effect=version):
+            self.assertEqual(self.build._toolchain(), (sdk, sdk / "aillvm/bin"))
+
+        for mismatch in ("older", "mixed"):
+            with self.subTest(mismatch=mismatch):
+                def incompatible(cmd, **kwargs):
+                    if cmd[0].endswith("hipcc"):
+                        return "clang version 17.0.0\n"
+                    major = 16 if mismatch == "older" else (19 if cmd[0].endswith("llvm-as") else 18)
+                    return f"LLVM version {major}.0.0\n"
+
+                with patch.object(self.build.subprocess, "check_output", side_effect=incompatible):
+                    with self.assertRaisesRegex(RuntimeError, "consistent DTK"):
+                        self.build._toolchain()
 
     def test_shared_source_configuration_preserves_backend_specific_pins(self):
         dependency = SimpleNamespace(url="original-url", commit_id="original-pin", dst_path="old")

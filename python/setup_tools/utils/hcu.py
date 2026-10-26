@@ -79,12 +79,23 @@ def _toolchain():
     compiler_major = llvm_major(sdk / "bin/hipcc")
     override = os.environ.get("FLAGCX_HCU_LLVM_BIN")
     candidates = [Path(override).expanduser()] if override else [sdk / "llvm/bin", sdk / "aillvm/bin", sdk / "bin"]
+    compatible = []
     for candidate in candidates:
         tools = [candidate / tool for tool in ("opt", "llvm-as", "llvm-dis")]
-        if all(tool.is_file() for tool in tools) and all(llvm_major(tool) == compiler_major for tool in tools):
-            return sdk, candidate.resolve()
-    raise RuntimeError(f"Cannot find DTK opt, llvm-as and llvm-dis matching hipcc's LLVM {compiler_major}. "
-                       "Set FLAGCX_HCU_LLVM_BIN to their directory; use the same DTK LLVM build as hipcc.")
+        if not all(tool.is_file() for tool in tools):
+            continue
+        versions = {llvm_major(tool) for tool in tools}
+        if len(versions) == 1 and next(iter(versions)) >= compiler_major:
+            compatible.append((versions.pop(), candidate))
+    if compatible:
+        # LLVM bitcode readers support older producers. In DTK, hipcc can use
+        # LLVM 17 while the complete opt/as/dis suite uses AOMP LLVM 18. Prefer
+        # the nearest eligible version; actual readability is checked by the
+        # DU build's llvm-dis and opt verifier, then by the kernel link check.
+        _, selected = min(compatible, key=lambda entry: entry[0])
+        return sdk, selected.resolve()
+    raise RuntimeError(f"Cannot find a consistent DTK opt/llvm-as/llvm-dis suite with LLVM >= {compiler_major}. "
+                       "Set FLAGCX_HCU_LLVM_BIN to its directory. Mixed tool versions and older readers are rejected.")
 
 
 class HCUFlagCXRegistrar(FlagCXRegistrar):

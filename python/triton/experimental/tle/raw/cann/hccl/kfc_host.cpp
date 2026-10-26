@@ -13,9 +13,9 @@
  *   - aicpu_operator_pub.h::HcclKFCTilingData
  */
 
-#include <cstdio>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <dlfcn.h>
 #include <memory>
@@ -47,8 +47,9 @@ constexpr size_t kHcomIdOffset = 16U + 4U + 4U + 8U + 32U * 8U + 32U * 8U;
 constexpr size_t kHcomIdBytes = 128U;
 constexpr size_t kInlineTilingBytes = 2048U;
 
-using HcomMc2AiCpuStreamAllocAndGetFn =
-    HcclResult (*)(const char *group, uint32_t streamMode, rtStream_t *aiCpuStream);
+using HcomMc2AiCpuStreamAllocAndGetFn = HcclResult (*)(const char *group,
+                                                       uint32_t streamMode,
+                                                       rtStream_t *aiCpuStream);
 
 // Exact CANN 9.1.0 HcclKFCTilingData layout.
 struct KfcTilingData {
@@ -97,7 +98,8 @@ static_assert(offsetof(KfcTilingData, taskType) == 116);
 static_assert(sizeof(KfcTilingData) == 128);
 
 // Mirrors cann-hccl AicpuUnfoldKernelLaunch::ApiParamDef.
-// Layout overlays KFCTask: inputA, outputC, commOut, context, workSpace, tilingData.
+// Layout overlays KFCTask: inputA, outputC, commOut, context, workSpace,
+// tilingData.
 struct ApiParamDef {
   uint64_t x1 = 0;        // inputA / sendbuffer
   uint64_t y = 0;         // outputC (unused when useBufferType==0)
@@ -127,10 +129,9 @@ int ReadWorkspace(uint64_t context, uint64_t *workspace) {
   if (context == 0 || workspace == nullptr) {
     return -1;
   }
-  const aclError rc =
-      aclrtMemcpy(workspace, sizeof(*workspace),
-                  reinterpret_cast<const void *>(context), sizeof(*workspace),
-                  ACL_MEMCPY_DEVICE_TO_HOST);
+  const aclError rc = aclrtMemcpy(
+      workspace, sizeof(*workspace), reinterpret_cast<const void *>(context),
+      sizeof(*workspace), ACL_MEMCPY_DEVICE_TO_HOST);
   return rc == ACL_SUCCESS ? 0 : static_cast<int>(rc);
 }
 
@@ -139,10 +140,10 @@ int ReadHcomId(uint64_t context, char *hcomId, size_t hcomIdBytes) {
     return -1;
   }
   std::memset(hcomId, 0, hcomIdBytes);
-  const aclError rc = aclrtMemcpy(
-      hcomId, kHcomIdBytes,
-      reinterpret_cast<const void *>(context + kHcomIdOffset), kHcomIdBytes,
-      ACL_MEMCPY_DEVICE_TO_HOST);
+  const aclError rc =
+      aclrtMemcpy(hcomId, kHcomIdBytes,
+                  reinterpret_cast<const void *>(context + kHcomIdOffset),
+                  kHcomIdBytes, ACL_MEMCPY_DEVICE_TO_HOST);
   return rc == ACL_SUCCESS ? 0 : static_cast<int>(rc);
 }
 
@@ -247,8 +248,8 @@ int hccl_kfc_probe_create_ctx(void *comm, uint64_t count,
   }
 
   void *context = nullptr;
-  rc = HcclCreateOpResCtx(reinterpret_cast<HcclComm>(comm),
-                          kAllReduceOpType, opArgs, &context);
+  rc = HcclCreateOpResCtx(reinterpret_cast<HcclComm>(comm), kAllReduceOpType,
+                          opArgs, &context);
   (void)HcclKfcFreeOpArgs(opArgs);
   if (rc != HCCL_SUCCESS || context == nullptr) {
     return rc == HCCL_SUCCESS ? -3 : static_cast<int>(rc);
@@ -311,8 +312,7 @@ int hccl_kfc_probe_start(uint64_t context, void *mainStream, uint64_t scratch,
   apiParam->context = context;
   apiParam->workspace = workspace;
   std::memcpy(apiParam->tilingData, &tiling, sizeof(tiling));
-  apiParam->tilingDataPtr =
-      reinterpret_cast<uint64_t>(apiParam->tilingData);
+  apiParam->tilingDataPtr = reinterpret_cast<uint64_t>(apiParam->tilingData);
   std::snprintf(apiParam->soName, sizeof(apiParam->soName), "%s",
                 "libccl_kernel.so");
   // Eager/non-GE path launches RunAicpuRpcSrvLaunch, not the GE wrapper
@@ -331,8 +331,7 @@ int hccl_kfc_probe_start(uint64_t context, void *mainStream, uint64_t scratch,
   {
     char hcomId[kHcomIdBytes] = {};
     const int hcomRc = ReadHcomId(context, hcomId, sizeof(hcomId));
-    const int streamRc =
-        AllocHcclAiCpuStream(context, &state->attachStream);
+    const int streamRc = AllocHcclAiCpuStream(context, &state->attachStream);
     if (streamRc == 0 && state->attachStream != nullptr) {
       std::fprintf(stderr,
                    "[kfc-probe] HCCL AICPU stream=%p hcomId='%s' "
@@ -340,14 +339,14 @@ int hccl_kfc_probe_start(uint64_t context, void *mainStream, uint64_t scratch,
                    state->attachStream, hcomId);
       (void)hcomRc;
     } else {
-      aclRc = aclrtCreateStreamWithConfig(
-          &state->attachStream, 0,
-          ACL_STREAM_FAST_LAUNCH | ACL_STREAM_FAST_SYNC);
+      aclRc = aclrtCreateStreamWithConfig(&state->attachStream, 0,
+                                          ACL_STREAM_FAST_LAUNCH |
+                                              ACL_STREAM_FAST_SYNC);
       if (aclRc != ACL_SUCCESS || state->attachStream == nullptr) {
         CleanupCompleted(state.release());
-        return streamRc != 0 ? (200000 + streamRc)
-                             : (aclRc == ACL_SUCCESS ? -4
-                                                     : static_cast<int>(aclRc));
+        return streamRc != 0
+                   ? (200000 + streamRc)
+                   : (aclRc == ACL_SUCCESS ? -4 : static_cast<int>(aclRc));
       }
       state->ownAttachStream = true;
       std::fprintf(stderr,
@@ -364,8 +363,8 @@ int hccl_kfc_probe_start(uint64_t context, void *mainStream, uint64_t scratch,
   }
   // ACL events require record before wait. AICore is enqueued after return,
   // so it still appears after this record on the main stream.
-  aclRc = aclrtRecordEvent(
-      state->startEvent, reinterpret_cast<aclrtStream>(mainStream));
+  aclRc = aclrtRecordEvent(state->startEvent,
+                           reinterpret_cast<aclrtStream>(mainStream));
   if (aclRc != ACL_SUCCESS) {
     CleanupCompleted(state.release());
     return static_cast<int>(aclRc);
@@ -383,9 +382,9 @@ int hccl_kfc_probe_start(uint64_t context, void *mainStream, uint64_t scratch,
   launchArgs.hostInputInfoNum = 1;
   launchArgs.kernelOffsetInfoPtr = nullptr;
   launchArgs.kernelOffsetInfoNum = 0;
-  launchArgs.soNameAddrOffset = static_cast<uint32_t>(
-      reinterpret_cast<const char *>(apiParam->soName) -
-      reinterpret_cast<const char *>(apiParam));
+  launchArgs.soNameAddrOffset =
+      static_cast<uint32_t>(reinterpret_cast<const char *>(apiParam->soName) -
+                            reinterpret_cast<const char *>(apiParam));
   launchArgs.kernelNameAddrOffset = static_cast<uint32_t>(
       reinterpret_cast<const char *>(apiParam->kernelName) -
       reinterpret_cast<const char *>(apiParam));

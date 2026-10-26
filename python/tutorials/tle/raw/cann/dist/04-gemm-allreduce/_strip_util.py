@@ -94,7 +94,14 @@ def wait_strip_kernel(ready, strip, epoch, world):
 
 @triton.jit
 def ar_strip_kernel(
-    symm, out, ready, strip, epoch, world, elem_off, elem_n,
+    symm,
+    out,
+    ready,
+    strip,
+    epoch,
+    world,
+    elem_off,
+    elem_n,
     NUM_BLOCKS: tl.constexpr,
 ):
     pid = tl.program_id(0)
@@ -107,15 +114,23 @@ def ar_strip_kernel(
 
 
 def launch_mark(ready, strip, epoch, world):
-    mark_strip_kernel[(1,)](ready, strip, epoch, world, **_kw())
+    mark_strip_kernel[(1, )](ready, strip, epoch, world, **_kw())
 
 
 def launch_wait(ready, strip, epoch, world):
-    wait_strip_kernel[(NUM_AR_CORES,)](ready, strip, epoch, world, **_kw())
+    wait_strip_kernel[(NUM_AR_CORES, )](ready, strip, epoch, world, **_kw())
 
 
 def launch_ar_strip(symm, out, ready, strip, epoch, world, elem_off, elem_n):
-    ar_strip_kernel[(NUM_AR_CORES,)](
-        symm, out, ready, strip, epoch, world, elem_off, elem_n,
-        NUM_BLOCKS=NUM_AR_CORES, **_kw(),
+    ar_strip_kernel[(NUM_AR_CORES, )](
+        symm,
+        out,
+        ready,
+        strip,
+        epoch,
+        world,
+        elem_off,
+        elem_n,
+        NUM_BLOCKS=NUM_AR_CORES,
+        **_kw(),
     )

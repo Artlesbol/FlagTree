@@ -130,6 +130,7 @@ def get_hccl_comm(rank: Optional[int] = None):
 
 
 class HostLibrary:
+
     def __init__(self, library_path: Path):
         self.path = Path(library_path).expanduser().resolve()
         self.library = ctypes.CDLL(str(self.path))
@@ -191,10 +192,9 @@ def _compile_host_to_cache(source: Path, force: bool = False) -> Path:
     try:
         build = subprocess.run(command, capture_output=True)
         if build.returncode != 0:
-            raise RuntimeError(
-                "g++ failed while compiling HCCL host library\n"
-                f"command: {shlex.join(command)}\n"
-                f"stderr:\n{build.stderr.decode()}")
+            raise RuntimeError("g++ failed while compiling HCCL host library\n"
+                               f"command: {shlex.join(command)}\n"
+                               f"stderr:\n{build.stderr.decode()}")
         return Path(cache.put(temporary_path.read_bytes(), output_name, binary=True))
     finally:
         temporary_path.unlink(missing_ok=True)
@@ -227,9 +227,7 @@ def create_op_res_ctx(host: HostLibrary, comm, count: int = 1) -> int:
     fn.restype = ctypes.c_int
     rc = fn(ctypes.c_void_p(int(comm)), ctypes.c_uint64(count), ctypes.byref(out))
     if rc != 0 or out.value == 0:
-        raise RuntimeError(
-            f"HcclCreateOpResCtx failed: rc={rc}, context=0x{out.value:x}"
-        )
+        raise RuntimeError(f"HcclCreateOpResCtx failed: rc={rc}, context=0x{out.value:x}")
     return int(out.value)
 
 
@@ -268,9 +266,7 @@ def start_kfc_server(
         ctypes.byref(launch_rc),
     )
     if rc != 0:
-        raise RuntimeError(
-            f"KFC enqueue failed: wrapper_rc={rc}, rt_launch_rc={launch_rc.value}"
-        )
+        raise RuntimeError(f"KFC enqueue failed: wrapper_rc={rc}, rt_launch_rc={launch_rc.value}")
     return int(handle.value), int(launch_rc.value)
 
 
@@ -315,7 +311,7 @@ class HcclKfcSession:
         if self._handle is not None:
             return self._handle
         if scratch is None:
-            scratch = torch.zeros((16,), dtype=torch.float16, device="npu")
+            scratch = torch.zeros((16, ), dtype=torch.float16, device="npu")
         self._scratch = scratch
         handle, _launch_rc = start_kfc_server(self.host, self.context, scratch)
         self._handle = handle
@@ -330,6 +326,4 @@ class HcclKfcSession:
         self._handle = None
         if rc != 0:
             # Do not tear down ACL while a live KFC task may still own the stream.
-            raise RuntimeError(
-                f"KFC attach stream did not finish within {timeout_ms} ms, acl_rc={rc}"
-            )
+            raise RuntimeError(f"KFC attach stream did not finish within {timeout_ms} ms, acl_rc={rc}")

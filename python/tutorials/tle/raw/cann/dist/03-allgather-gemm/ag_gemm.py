@@ -129,9 +129,7 @@ def _run_p2p(a_local, b, symm, workspace, c, rank, world, peer_views):
     for pe in range(world):
         if pe == rank:
             continue
-        workspace[pe * M_PER_RANK:(pe + 1) * M_PER_RANK].copy_(
-            peer_views[pe].view(M_PER_RANK, K)
-        )
+        workspace[pe * M_PER_RANK:(pe + 1) * M_PER_RANK].copy_(peer_views[pe].view(M_PER_RANK, K))
     torch.mm(workspace, b, out=c)
 
 
@@ -169,13 +167,9 @@ def main():
     symm = ws_flat = workspace = None
     peer_views = None
     if need_ash:
-        ws_flat = create_symmetric_tensor(
-            torch.empty(m_full * K, dtype=torch.float16, device=DEVICE)
-        )
+        ws_flat = create_symmetric_tensor(torch.empty(m_full * K, dtype=torch.float16, device=DEVICE))
         workspace = ws_flat.view(m_full, K)
-        symm = create_symmetric_tensor(
-            torch.empty(n_local, dtype=torch.float16, device=DEVICE)
-        )
+        symm = create_symmetric_tensor(torch.empty(n_local, dtype=torch.float16, device=DEVICE))
         ash.aclshmem_barrier_all()
         if AG_MODE == "p2p":
             peer_views = [None] * world
@@ -183,9 +177,7 @@ def main():
                 if pe == rank:
                     continue
                 ptr = ash.aclshmem_ptr(int(symm.data_ptr()), pe)
-                peer_views[pe] = ash.construct_tensor_from_ptr(
-                    ptr, (n_local, ), torch.float16, a_local.device
-                )
+                peer_views[pe] = ash.construct_tensor_from_ptr(ptr, (n_local, ), torch.float16, a_local.device)
 
     def _run_fused():
         if AG_MODE in ("cann", "local_first", "hccl"):
@@ -204,19 +196,19 @@ def main():
     _run_fused()
     torch.npu.synchronize()
     ok = torch.allclose(c_fused.float(), ref.float(), rtol=3e-2, atol=3e-2)
-    print(f"[rank {rank}] fused({AG_MODE}) vs ref "
-          f"{'PASS' if ok else 'FAIL'} "
-          f"max_abs={(c_fused.float() - ref.float()).abs().max().item():.4f}",
-          flush=True)
+    print(
+        f"[rank {rank}] fused({AG_MODE}) vs ref "
+        f"{'PASS' if ok else 'FAIL'} "
+        f"max_abs={(c_fused.float() - ref.float()).abs().max().item():.4f}", flush=True)
 
     npu_out, _ = torch_npu.npu_all_gather_base_mm(a_local, b, hcom, world)
     torch.npu.synchronize()
     ok_npu = torch.allclose(npu_out.float(), ref.float(), rtol=3e-2, atol=3e-2)
     ok_vs = torch.allclose(c_fused.float(), npu_out.float(), rtol=3e-2, atol=3e-2)
     print(f"[rank {rank}] torch_npu vs ref {'PASS' if ok_npu else 'FAIL'}", flush=True)
-    print(f"[rank {rank}] fused vs torch_npu {'PASS' if ok_vs else 'FAIL'} "
-          f"max_abs={(c_fused.float() - npu_out.float()).abs().max().item():.4f}",
-          flush=True)
+    print(
+        f"[rank {rank}] fused vs torch_npu {'PASS' if ok_vs else 'FAIL'} "
+        f"max_abs={(c_fused.float() - npu_out.float()).abs().max().item():.4f}", flush=True)
     if not ok_vs:
         if need_ash:
             cleanup_symmetric_tensor(symm)
@@ -234,7 +226,8 @@ def main():
 
     us_npu = bench_us(
         lambda: torch_npu.npu_all_gather_base_mm(a_local, b, hcom, world),
-        warmup=5, iters=iters,
+        warmup=5,
+        iters=iters,
     )
     us_fused = bench_us(_run_fused, warmup=5, iters=iters)
     us_torch = bench_us(lambda: _torch_ag_mm(a_local, b, world), warmup=5, iters=iters)

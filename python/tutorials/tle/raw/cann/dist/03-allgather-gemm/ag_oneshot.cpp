@@ -36,7 +36,8 @@ _mlir_ciface_cannshmem_ag_oneshot(memref_t<__gm__ half, 1> *symm,
   }
 
   // nbytes for getmem (OpenSHMEM-style getmem takes byte count).
-  const uint32_t nbytes = static_cast<uint32_t>(n_local * static_cast<int64_t>(sizeof(half)));
+  const uint32_t nbytes =
+      static_cast<uint32_t>(n_local * static_cast<int64_t>(sizeof(half)));
 
   aclshmemx_barrier_all_vec();
 

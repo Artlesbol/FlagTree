@@ -18,14 +18,11 @@ extern "C" {
 
 // inputs: symm, out, ready, epoch, M, N, BM, BN, num_tiles, pid, nblocks
 // output: dummy
-__aiv__ void
-_mlir_ciface_cannshmem_ar_tile(memref_t<__gm__ half, 1> *symm,
-                               memref_t<__gm__ half, 1> *out,
-                               memref_t<__gm__ int32_t, 1> *ready,
-                               int64_t epoch, int64_t M, int64_t N, int64_t BM,
-                               int64_t BN, int64_t num_tiles, int64_t pid,
-                               int64_t nblocks,
-                               memref_t<__ubuf__ half, 1> *dummy) {
+__aiv__ void _mlir_ciface_cannshmem_ar_tile(
+    memref_t<__gm__ half, 1> *symm, memref_t<__gm__ half, 1> *out,
+    memref_t<__gm__ int32_t, 1> *ready, int64_t epoch, int64_t M, int64_t N,
+    int64_t BM, int64_t BN, int64_t num_tiles, int64_t pid, int64_t nblocks,
+    memref_t<__ubuf__ half, 1> *dummy) {
   (void)dummy;
   __gm__ half *local = symm->aligned + symm->offset;
   __gm__ half *gout = out->aligned + out->offset;

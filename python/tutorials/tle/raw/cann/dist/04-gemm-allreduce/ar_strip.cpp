@@ -1,7 +1,7 @@
 // Copyright 2026-     FlagOS Contributors
 // Strip-granular oneshot AR with P2P signals (Triton-dist notify / CANN tile
-// Commit style) — NO aclshmemx_barrier_all_vec (that deadlocks under dual-stream
-// pipelining when not all AIVs enter together).
+// Commit style) — NO aclshmemx_barrier_all_vec (that deadlocks under
+// dual-stream pipelining when not all AIVs enter together).
 //
 // ready layout: int32[num_strips * world]; producer ``me`` does
 //   signal_op(ready + strip * world + me, epoch, SET, pe) for every pe.
@@ -23,11 +23,9 @@ extern "C" {
 
 // Mark strip ready: SET ready[strip*world+me]=epoch on every PE (notify).
 // inputs: ready, strip, epoch, world, pid | output: dummy
-__aiv__ void
-_mlir_ciface_cannshmem_mark_strip(memref_t<__gm__ int32_t, 1> *ready,
-                                  int64_t strip, int64_t epoch, int64_t world,
-                                  int64_t pid,
-                                  memref_t<__ubuf__ half, 1> *dummy) {
+__aiv__ void _mlir_ciface_cannshmem_mark_strip(
+    memref_t<__gm__ int32_t, 1> *ready, int64_t strip, int64_t epoch,
+    int64_t world, int64_t pid, memref_t<__ubuf__ half, 1> *dummy) {
   (void)dummy;
   if (pid != 0) {
     return;
@@ -47,11 +45,9 @@ _mlir_ciface_cannshmem_mark_strip(memref_t<__gm__ int32_t, 1> *ready,
 
 // Wait only: block until ready[strip*world+p] >= epoch for all p.
 // inputs: ready, strip, epoch, world, pid | output: dummy
-__aiv__ void
-_mlir_ciface_cannshmem_wait_strip(memref_t<__gm__ int32_t, 1> *ready,
-                                  int64_t strip, int64_t epoch, int64_t world,
-                                  int64_t pid,
-                                  memref_t<__ubuf__ half, 1> *dummy) {
+__aiv__ void _mlir_ciface_cannshmem_wait_strip(
+    memref_t<__gm__ int32_t, 1> *ready, int64_t strip, int64_t epoch,
+    int64_t world, int64_t pid, memref_t<__ubuf__ half, 1> *dummy) {
   (void)dummy;
   (void)pid;
   __gm__ int32_t *rdy = ready->aligned + ready->offset;
@@ -67,14 +63,11 @@ _mlir_ciface_cannshmem_wait_strip(memref_t<__gm__ int32_t, 1> *ready,
 // Wait peer strip signals + oneshot reduce for [elem_off, elem_off+elem_n).
 // inputs: symm, out, ready, strip, epoch, world, elem_off, elem_n, pid, nblocks
 // output: dummy
-__aiv__ void
-_mlir_ciface_cannshmem_ar_strip(memref_t<__gm__ half, 1> *symm,
-                                memref_t<__gm__ half, 1> *out,
-                                memref_t<__gm__ int32_t, 1> *ready,
-                                int64_t strip, int64_t epoch, int64_t world,
-                                int64_t elem_off, int64_t elem_n, int64_t pid,
-                                int64_t nblocks,
-                                memref_t<__ubuf__ half, 1> *dummy) {
+__aiv__ void _mlir_ciface_cannshmem_ar_strip(
+    memref_t<__gm__ half, 1> *symm, memref_t<__gm__ half, 1> *out,
+    memref_t<__gm__ int32_t, 1> *ready, int64_t strip, int64_t epoch,
+    int64_t world, int64_t elem_off, int64_t elem_n, int64_t pid,
+    int64_t nblocks, memref_t<__ubuf__ half, 1> *dummy) {
   (void)dummy;
   __gm__ half *local = symm->aligned + symm->offset;
   __gm__ half *gout = out->aligned + out->offset;

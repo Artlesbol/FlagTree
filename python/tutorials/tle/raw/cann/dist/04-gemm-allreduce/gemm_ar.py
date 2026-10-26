@@ -79,9 +79,7 @@ def selected_backends():
         names = [x.strip() for x in impl.split(",") if x.strip()]
     unknown = [n for n in names if n not in _IMPL_MODS]
     if unknown:
-        raise SystemExit(
-            f"unknown GEMM_AR_IMPL {unknown}; choose from {list(_IMPL_MODS)} or all"
-        )
+        raise SystemExit(f"unknown GEMM_AR_IMPL {unknown}; choose from {list(_IMPL_MODS)} or all")
     return [(n, _IMPL_MODS[n]) for n in names]
 
 
@@ -103,7 +101,7 @@ def evaluate(
     if not getattr(mod, "IMPLEMENTED", False):
         return CaseResult(**base, status="SKIP", reason="not_implemented")
 
-    out_mn = out_flat[: m * n].view(m, n)
+    out_mn = out_flat[:m * n].view(m, n)
 
     def _run():
         mod.run_gemm_ar(a, b, symm, out_flat, rank, world)
@@ -185,9 +183,7 @@ def run_worker() -> list[CaseResult]:
             prep(rank, world, max_m, max_n)
 
     # One symmetric C buffer for the sweep (avoid per-shape finalize).
-    symm = create_symmetric_tensor(
-        torch.empty(max_elems, dtype=torch.float16, device=DEVICE)
-    )
+    symm = create_symmetric_tensor(torch.empty(max_elems, dtype=torch.float16, device=DEVICE))
     out_flat = torch.empty(max_elems, dtype=torch.float16, device=DEVICE)
 
     results: list[CaseResult] = []
@@ -225,9 +221,7 @@ def run_worker() -> list[CaseResult]:
 def _devices(world: int) -> str:
     visible = os.environ.get("ASCEND_RT_VISIBLE_DEVICES", "")
     if not visible:
-        raise SystemExit(
-            "set ASCEND_RT_VISIBLE_DEVICES to ≥8 NPU ids, e.g. 0,1,2,3,4,5,6,7"
-        )
+        raise SystemExit("set ASCEND_RT_VISIBLE_DEVICES to ≥8 NPU ids, e.g. 0,1,2,3,4,5,6,7")
     ids = [x.strip() for x in visible.split(",") if x.strip()]
     if len(ids) < world:
         raise SystemExit(f"need {world} devices, got {len(ids)}: {visible!r}")

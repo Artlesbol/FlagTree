@@ -1,6 +1,7 @@
 // Copyright 2026-     FlagOS Contributors
-// Thin raw RMA gather only: barrier + peer DataCopy into gathered[pe * n + ...].
-// Triton owns the fp32 reduce (see ar_reduce_kernel). Segmented hybrid path.
+// Thin raw RMA gather only: barrier + peer DataCopy into gathered[pe * n +
+// ...]. Triton owns the fp32 reduce (see ar_reduce_kernel). Segmented hybrid
+// path.
 
 #include "Utils.h"
 #include "kernel_operator.h"
@@ -18,12 +19,10 @@ extern "C" {
 // Operands (tle_raw.call order with output_indices=[8]):
 //   inputs:  symm, gathered, symm_off, gath_off, n, world, pid, nblocks
 //   outputs: dummy (UB)
-__aiv__ void
-_mlir_ciface_cannshmem_ar_gather(memref_t<__gm__ half, 1> *symm,
-                                 memref_t<__gm__ half, 1> *gathered,
-                                 int64_t symm_off, int64_t gath_off, int64_t n,
-                                 int64_t world, int64_t pid, int64_t nblocks,
-                                 memref_t<__ubuf__ half, 1> *dummy) {
+__aiv__ void _mlir_ciface_cannshmem_ar_gather(
+    memref_t<__gm__ half, 1> *symm, memref_t<__gm__ half, 1> *gathered,
+    int64_t symm_off, int64_t gath_off, int64_t n, int64_t world, int64_t pid,
+    int64_t nblocks, memref_t<__ubuf__ half, 1> *dummy) {
   (void)dummy;
   __gm__ half *local = symm->aligned + symm->offset;
   __gm__ half *gout = gathered->aligned + gathered->offset;
@@ -75,8 +74,8 @@ _mlir_ciface_cannshmem_ar_gather(memref_t<__gm__ half, 1> *symm,
       WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
 
       GlobalTensor<half> g_dst;
-      g_dst.SetGlobalBuffer(gout + gath_off +
-                            static_cast<int64_t>(pe) * n + g_off);
+      g_dst.SetGlobalBuffer(gout + gath_off + static_cast<int64_t>(pe) * n +
+                            g_off);
       DataCopy(g_dst, tmp, len_align);
       SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
       WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);

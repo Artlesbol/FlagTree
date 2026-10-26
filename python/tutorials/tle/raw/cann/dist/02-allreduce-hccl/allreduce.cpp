@@ -12,11 +12,11 @@ using namespace AscendC;
 extern "C" {
 
 // inputs: buf, n, ctx_u64, status | output: dummy
-__aiv__ void
-_mlir_ciface_hccl_allreduce(memref_t<__gm__ half, 1> *buf, int64_t n,
-                            memref_t<__gm__ uint64_t, 1> *ctx_u64,
-                            memref_t<__gm__ int32_t, 1> *status,
-                            memref_t<__ubuf__ half, 1> *dummy) {
+__aiv__ void _mlir_ciface_hccl_allreduce(memref_t<__gm__ half, 1> *buf,
+                                         int64_t n,
+                                         memref_t<__gm__ uint64_t, 1> *ctx_u64,
+                                         memref_t<__gm__ int32_t, 1> *status,
+                                         memref_t<__ubuf__ half, 1> *dummy) {
   (void)dummy;
   if (GetBlockIdx() != 0) {
     return;

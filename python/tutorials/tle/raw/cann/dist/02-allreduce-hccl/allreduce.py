@@ -64,12 +64,12 @@ def main() -> None:
     world = dist.get_world_size()
 
     # Local value = rank+1; after sum-AllReduce every rank should see 1+...+world.
-    buf = torch.full((N,), float(rank + 1), dtype=torch.float16, device=DEVICE)
+    buf = torch.full((N, ), float(rank + 1), dtype=torch.float16, device=DEVICE)
     expected = float(sum(range(1, world + 1)))
 
     session = HcclKfcSession.open(get_hccl_comm(rank), count=N)
     ctx_box = torch.tensor([session.context], dtype=torch.uint64, device=DEVICE)
-    status = torch.zeros((1,), dtype=torch.int32, device=DEVICE)
+    status = torch.zeros((1, ), dtype=torch.int32, device=DEVICE)
 
     dist.barrier()
     # Pass the same buffer into host launch packing (send/recv for ApiParamDef).
@@ -102,9 +102,7 @@ def main() -> None:
         flush=True,
     )
     if max_abs > 1e-2:
-        raise RuntimeError(
-            f"AllReduce result mismatch: expected {expected}, max_abs={max_abs}"
-        )
+        raise RuntimeError(f"AllReduce result mismatch: expected {expected}, max_abs={max_abs}")
 
     dist.barrier()
     if rank == 0:

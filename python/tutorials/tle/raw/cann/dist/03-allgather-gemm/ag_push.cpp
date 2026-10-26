@@ -14,11 +14,11 @@ using namespace AscendC;
 extern "C" {
 
 // inputs: a_local, workspace, n_local, pid, nblocks | output: dummy
-__aiv__ void
-_mlir_ciface_cannshmem_ag_push(memref_t<__gm__ half, 1> *a_local,
-                               memref_t<__gm__ half, 1> *workspace,
-                               int64_t n_local, int64_t pid, int64_t nblocks,
-                               memref_t<__ubuf__ half, 1> *dummy) {
+__aiv__ void _mlir_ciface_cannshmem_ag_push(memref_t<__gm__ half, 1> *a_local,
+                                            memref_t<__gm__ half, 1> *workspace,
+                                            int64_t n_local, int64_t pid,
+                                            int64_t nblocks,
+                                            memref_t<__ubuf__ half, 1> *dummy) {
   (void)dummy;
   (void)nblocks;
   __gm__ half *src = a_local->aligned + a_local->offset;

@@ -33,8 +33,12 @@ def _stream_handle(stream=None):
 
 @triton.jit
 def gather_reduce_kernel(
-    gather_ptr, out_ptr, n_elems,
-    WORLD: tl.constexpr, STRIDE: tl.constexpr, BLOCK: tl.constexpr,
+    gather_ptr,
+    out_ptr,
+    n_elems,
+    WORLD: tl.constexpr,
+    STRIDE: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     pid = tl.program_id(0)
     ncore = tl.num_programs(0)
@@ -43,9 +47,7 @@ def gather_reduce_kernel(
         mask = offs < n_elems
         acc = tl.zeros([BLOCK], dtype=tl.float32)
         for pe in tl.static_range(0, WORLD):
-            acc += tl.load(
-                gather_ptr + pe * STRIDE + offs, mask=mask, other=0.0
-            ).to(tl.float32)
+            acc += tl.load(gather_ptr + pe * STRIDE + offs, mask=mask, other=0.0).to(tl.float32)
         tl.store(out_ptr + offs, acc.to(tl.float16), mask=mask)
 
 
@@ -55,9 +57,7 @@ def prepare(rank: int, world: int, max_m: int, max_n: int) -> None:
     need = max_m * max_n
     if _gather is None:
         _max_elems = need
-        _gather = create_symmetric_tensor(
-            torch.empty(world * need, dtype=torch.float16, device=DEVICE)
-        )
+        _gather = create_symmetric_tensor(torch.empty(world * need, dtype=torch.float16, device=DEVICE))
 
 
 def run_gemm_ar(a, b, symm, out_flat, rank: int, world: int) -> None:
@@ -79,7 +79,12 @@ def run_gemm_ar(a, b, symm, out_flat, rank: int, world: int) -> None:
                 continue
             ash.aclshmem_putmem_nbi(dst, src, nbytes, pe)
     ash.aclshmemx_barrier_all_on_stream(_stream_handle())
-    gather_reduce_kernel[(NUM_AR_CORES,)](
-        _gather, out_flat, n_elems,
-        WORLD=world, STRIDE=_max_elems, BLOCK=AR_BLOCK, **_kw(),
+    gather_reduce_kernel[(NUM_AR_CORES, )](
+        _gather,
+        out_flat,
+        n_elems,
+        WORLD=world,
+        STRIDE=_max_elems,
+        BLOCK=AR_BLOCK,
+        **_kw(),
     )

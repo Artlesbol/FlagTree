@@ -39,7 +39,7 @@ def _nstrips(m: int) -> int:
 
 def run_mm_hccl_ar(a, b, out_flat) -> None:
     m, n = a.shape[0], b.shape[1]
-    out = out_flat[: m * n].view(m, n)
+    out = out_flat[:m * n].view(m, n)
     strips = strip_plan(m, _nstrips(m))
 
     if len(strips) == 1:
@@ -59,11 +59,7 @@ def run_mm_hccl_ar(a, b, out_flat) -> None:
     with torch.npu.stream(s_ar):
         for i, (row0, nrows) in enumerate(strips):
             s_ar.wait_event(events[i])
-            handles.append(
-                dist.all_reduce(
-                    out[row0:row0 + nrows], op=dist.ReduceOp.SUM, async_op=True
-                )
-            )
+            handles.append(dist.all_reduce(out[row0:row0 + nrows], op=dist.ReduceOp.SUM, async_op=True))
         for h in handles:
             h.wait()
     cur.wait_stream(s_mm)

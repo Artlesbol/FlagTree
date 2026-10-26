@@ -25,9 +25,7 @@ def prepare(rank: int, world: int, max_m: int, max_n: int) -> None:
     global _ready
     nstrips = max(len(strip_plan(max_m)), 8)
     if _ready is None:
-        _ready = create_symmetric_tensor(
-            torch.zeros(nstrips * world, dtype=torch.int32, device=DEVICE)
-        )
+        _ready = create_symmetric_tensor(torch.zeros(nstrips * world, dtype=torch.int32, device=DEVICE))
 
 
 def run_gemm_ar(a, b, symm, out_flat, rank: int, world: int) -> None:
@@ -39,11 +37,18 @@ def run_gemm_ar(a, b, symm, out_flat, rank: int, world: int) -> None:
     epoch = _epoch
     for i, (row0, nrows) in enumerate(strips):
         torch.mm(
-            a[row0:row0 + nrows], b,
+            a[row0:row0 + nrows],
+            b,
             out=symm[row0 * n:(row0 + nrows) * n].view(nrows, n),
         )
         launch_mark(_ready, i, epoch, world)
         launch_ar_strip(
-            symm, out_flat, _ready, i, epoch, world,
-            row0 * n, nrows * n,
+            symm,
+            out_flat,
+            _ready,
+            i,
+            epoch,
+            world,
+            row0 * n,
+            nrows * n,
         )

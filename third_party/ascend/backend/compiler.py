@@ -878,13 +878,8 @@ def get_libdevice():
 
 
 def get_extra_link_bitcodes():
-    """Extra --link-aicore-bitcode paths: cannshmem_mlir lib + cann op mix BCs."""
+    """Extra --link-aicore-bitcode paths (cann op mix BCs, etc.)."""
     paths: list[str] = []
-    try:
-        from triton.experimental.tle.raw.cannshmem_mlir.utils import get_cannshmem_mlir_link_bitcodes
-        paths.extend(get_cannshmem_mlir_link_bitcodes())
-    except ImportError:
-        pass
     try:
         from triton.experimental.tle.raw.cann.runtime import get_op_extra_link_bitcodes
         paths.extend(get_op_extra_link_bitcodes())

@@ -193,10 +193,10 @@ class CANNJITFunction(RawJITFunction):
     bitcode with ccec on first use; the produced bitcode is cached under the
     Triton cache directory (~/.triton/cache).
 
-    Pass library=\"cannshmem_mlir\" to late-link AscendNPU-IR Shmem template
-    bitcode (_mlir_ciface_aclshmem_*; same role as CUDA library=\"nvshmem\").
     Pass library=\"cannshmem\" for official cann/shmem headers (aclshmem_*
-    inlined into the op BC; no mlir template late-link).
+    inlined into the op BC).
+    Pass library=\"hccl\" for AscendC device HCCL headers (Hccl::AllReduce /
+    Commit; header-inline, no separate device bc).
     """
 
     def __init__(self, fn: Any, file, format: Optional[str] = None, extern_func_name: str = "",
@@ -212,15 +212,15 @@ class CANNJITFunction(RawJITFunction):
         if extra_buffers is not None:
             self.extra_buffers = extra_buffers
 
-        if self.library == "cannshmem_mlir":
-            from triton.experimental.tle.raw.cannshmem_mlir.utils import enable_cannshmem_mlir_device_bc
-            enable_cannshmem_mlir_device_bc(True)
-        elif self.library == "cannshmem":
-            from triton.experimental.tle.raw.cannshmem.utils import enable_cannshmem
+        if self.library == "cannshmem":
+            from triton.experimental.tle.raw.cann.cannshmem.utils import enable_cannshmem
             enable_cannshmem(True)
+        elif self.library == "hccl":
+            from triton.experimental.tle.raw.cann.hccl.utils import enable_hccl
+            enable_hccl(True)
         elif self.library:
             raise ValueError(f"unsupported @dialect(name='cann') library: {self.library!r} "
-                             f"(expected '', 'cannshmem', or 'cannshmem_mlir')")
+                             f"(expected '', 'cannshmem', or 'hccl')")
 
         if self.format not in _BITCODE_FORMATS and self.format not in _SOURCE_FORMATS:
             raise ValueError(f"unsupported @dialect(name='cann') format: {self.format!r} "
@@ -277,8 +277,11 @@ class CANNJITFunction(RawJITFunction):
                                  "pass arch=... explicitly")
         includes = _template_include_dirs(self._extra_includes)
         if self.library == "cannshmem":
-            from triton.experimental.tle.raw.cannshmem.utils import get_cannshmem_include_dirs
+            from triton.experimental.tle.raw.cann.cannshmem.utils import get_cannshmem_include_dirs
             includes = list(includes) + get_cannshmem_include_dirs()
+        elif self.library == "hccl":
+            from triton.experimental.tle.raw.cann.hccl.utils import get_hccl_include_dirs
+            includes = list(includes) + get_hccl_include_dirs()
         return _compile_bitcode(self.file, arch, includes)
 
     @property

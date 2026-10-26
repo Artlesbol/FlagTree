@@ -11,7 +11,7 @@ Requires a cann/shmem source install (full headers incl. src/host_device):
   source /path/to/shmem/install/set_env.sh   # optional
 
   ASH_MASTER_PORT=18780 torchrun --nproc_per_node=2 --master_port=29780 \\
-      python/tutorials/tle/raw/cannshmem/01-ring/ring.py
+      python/tutorials/tle/raw/cann/dist/01-ring-cannshmem/ring.py
 """
 
 from pathlib import Path
@@ -22,7 +22,7 @@ import triton
 import triton.experimental.tle.language.raw as tle_raw
 import triton.language as tl
 from triton.experimental.tle.raw import dialect
-from triton.experimental.tle.raw.cannshmem.utils import (
+from triton.experimental.tle.raw.cann.cannshmem.utils import (
     bench_us,
     cleanup_symmetric_tensor,
     create_symmetric_tensor,

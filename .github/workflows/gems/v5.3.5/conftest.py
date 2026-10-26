@@ -95,12 +95,12 @@ def pytest_addoption(parser):
 
     try:
         parser.addoption(
-             "--collect-marks",
-             default=None,
-             help="Collect the tests with marker information and write to the specified file",
-         )
+            "--collect-marks",
+            default=None,
+            help="Collect the tests with marker information and write to the specified file",
+        )
     except ValueError:
-       pass
+        pass
 
 
 def pytest_configure(config):
@@ -113,9 +113,7 @@ def pytest_configure(config):
     global QUICK_MODE
     global FIRST_PARAMETER_ONLY
 
-    REGISTERED_MARKS = {
-        marker.split(":")[0].strip() for marker in config.getini("markers")
-    }
+    REGISTERED_MARKS = {marker.split(":")[0].strip() for marker in config.getini("markers")}
 
     RECORD_LOG = config.getoption("--record") == "log"
     RECORD_JSON = config.getoption("--record") == "json"
@@ -130,10 +128,7 @@ def pytest_configure(config):
 
     if RECORD_LOG:
         RUNTEST_INFO = {}
-        cmd_args = [
-            arg.replace(".py", "").replace("=", "_").replace("/", "_")
-            for arg in config.invocation_params.args
-        ]
+        cmd_args = [arg.replace(".py", "").replace("=", "_").replace("/", "_") for arg in config.invocation_params.args]
         logging.basicConfig(
             filename="result_{}.log".format("_".join(cmd_args)).replace("_-", "-"),
             filemode="w",
@@ -156,9 +151,7 @@ def pytest_runtest_teardown(item, nextitem):
     if hasattr(item, "callspec"):
         all_marks = list(item.iter_markers())
         op_marks = [
-            mark.name
-            for mark in all_marks
-            if mark.name not in BUILTIN_MARKS and mark.name not in REGISTERED_MARKS
+            mark.name for mark in all_marks if mark.name not in BUILTIN_MARKS and mark.name not in REGISTERED_MARKS
         ]
         if len(op_marks) > 0:
             params = str(item.callspec.params)
@@ -204,9 +197,7 @@ def get_reason(report):
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_logreport(report):
-    result = TEST_RESULTS.setdefault(
-        report.nodeid, {"params": None, "result": None, "opname": None}
-    )
+    result = TEST_RESULTS.setdefault(report.nodeid, {"params": None, "result": None, "opname": None})
     if report.when == "setup":
         if report.outcome == "skipped":
             reason = get_reason(report)
@@ -237,6 +228,7 @@ def pytest_terminal_summary(terminalreporter):
         json_file.flush()
         os.fsync(json_file.fileno())
 
+
 def _item_has_bfloat16_dtype(item):
     """Check if a parameterized test item includes bfloat16 in its dtype parameter."""
     if not hasattr(item, "callspec") or item.callspec is None:
@@ -249,6 +241,7 @@ def _item_has_bfloat16_dtype(item):
         if "bfloat16" in str(param_value).lower():
             return True
     return False
+
 
 def pytest_collection_modifyitems(session, config, items):
     """
@@ -334,9 +327,7 @@ def pytest_collection_modifyitems(session, config, items):
 
             all_marks = list(item.iter_markers())
             op_marks = [
-                mark.name
-                for mark in all_marks
-                if mark.name not in BUILTIN_MARKS and mark.name not in REGISTERED_MARKS
+                mark.name for mark in all_marks if mark.name not in BUILTIN_MARKS and mark.name not in REGISTERED_MARKS
             ]
 
             data["marks"] = op_marks

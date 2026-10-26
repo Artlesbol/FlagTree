@@ -49,6 +49,7 @@ def set_flaggems_root(root: Path) -> None:
     ROOT = root.resolve()
     TESTS_DIR = ROOT / "tests"
 
+
 # Exit code used when mark collection fails (statistics may be inaccurate)
 EXIT_MARKS_COLLECTION_FAILED = 2
 
@@ -78,7 +79,6 @@ DEFAULT_SKIP_TEST_FILES: Set[str] = {
 SKIP_OPERATORS: Set[str] = set(DEFAULT_SKIP_OPERATORS)
 SKIP_TEST_PATTERNS: Set[str] = set(DEFAULT_SKIP_TEST_PATTERNS)
 SKIP_TEST_FILES: Set[str] = set(DEFAULT_SKIP_TEST_FILES)
-
 
 # ============================================================================
 # Logging helpers - duplicate stdout/stderr to both console and a log file
@@ -157,12 +157,8 @@ def setup_logging(output_dir: Path) -> None:
     _LOG_FILE_HANDLE = open(log_path, "w", buffering=1, encoding="utf-8")
 
     # stdout and stderr both go to console + file.
-    sys.stdout = _Tee(
-        sys.__stdout__, _LOG_FILE_HANDLE, strip_ansi_for={_LOG_FILE_HANDLE}
-    )
-    sys.stderr = _Tee(
-        sys.__stderr__, _LOG_FILE_HANDLE, strip_ansi_for={_LOG_FILE_HANDLE}
-    )
+    sys.stdout = _Tee(sys.__stdout__, _LOG_FILE_HANDLE, strip_ansi_for={_LOG_FILE_HANDLE})
+    sys.stderr = _Tee(sys.__stderr__, _LOG_FILE_HANDLE, strip_ansi_for={_LOG_FILE_HANDLE})
 
     atexit.register(_close_log_file)
 
@@ -307,9 +303,7 @@ def apply_skip_file(file_path: Path):
 
     if data["skip_test_patterns"]:
         SKIP_TEST_PATTERNS = data["skip_test_patterns"]
-        print(
-            f"[INFO] Loaded {len(SKIP_TEST_PATTERNS)} skip_test_patterns from {file_path}"
-        )
+        print(f"[INFO] Loaded {len(SKIP_TEST_PATTERNS)} skip_test_patterns from {file_path}")
 
     if data["skip_test_files"]:
         SKIP_TEST_FILES = data["skip_test_files"]
@@ -374,11 +368,7 @@ def get_ops_to_test(args) -> List[str]:
     if args.op_list_file:
         try:
             with open(args.op_list_file, "r") as f:
-                lines = [
-                    line.strip()
-                    for line in f
-                    if line.strip() and not line.startswith("#")
-                ]
+                lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
             ops = [op.lstrip("_") for op in lines]
             filtered_ops = [op for op in ops if op not in SKIP_OPERATORS]
             if len(filtered_ops) < len(ops):
@@ -398,9 +388,7 @@ def build_mark_expression(ops: List[str]) -> str:
     return " or ".join(quoted_ops)
 
 
-def build_pytest_command(
-    ops: List[str], args, output_name: str = "accuracy_all.json"
-) -> str:
+def build_pytest_command(ops: List[str], args, output_name: str = "accuracy_all.json") -> str:
     """
     Build the pytest command line with skip filters.
     """
@@ -656,10 +644,8 @@ def print_summary(summary: Dict):
 
     # Show whether mark collection succeeded; if not, statistics may be unreliable.
     if summary.get("marks_collection_ok") is False:
-        warn(
-            "Mark collection did NOT succeed. Operator-level statistics were "
-            "derived from function-name fallback and may be inaccurate."
-        )
+        warn("Mark collection did NOT succeed. Operator-level statistics were "
+             "derived from function-name fallback and may be inaccurate.")
 
     # Show skip list summary
     if summary.get("skip_lists"):
@@ -671,9 +657,7 @@ def print_summary(summary: Dict):
         if skip_info.get("skip_test_files"):
             info(f"Skipped test files: {len(skip_info['skip_test_files'])}")
 
-    failed_ops = [
-        op for op, stats in summary["operators"].items() if stats["status"] == "Failed"
-    ]
+    failed_ops = [op for op, stats in summary["operators"].items() if stats["status"] == "Failed"]
     if failed_ops:
         warn(f"\nFailed operators ({len(failed_ops)}):")
         for op in failed_ops[:20]:
@@ -688,11 +672,7 @@ def print_summary(summary: Dict):
         if len(failed_ops) > 20:
             warn(f"  ... and {len(failed_ops) - 20} more")
 
-    not_found_ops = [
-        op
-        for op, stats in summary["operators"].items()
-        if stats["status"] == "NotFound"
-    ]
+    not_found_ops = [op for op, stats in summary["operators"].items() if stats["status"] == "NotFound"]
     if not_found_ops:
         warn(f"\nOperators with no tests ({len(not_found_ops)}):")
         for op in not_found_ops[:10]:
@@ -797,9 +777,7 @@ def collect_all_marks(
 
         # Exit codes 0, 3, 5 are acceptable (3 = pytest internal error, 5 = no tests)
         if collect_result.returncode not in [0, 3, 5]:
-            warn(
-                f"Mark collection returned unexpected exit code: {collect_result.returncode}"
-            )
+            warn(f"Mark collection returned unexpected exit code: {collect_result.returncode}")
 
     except subprocess.TimeoutExpired:
         # Treat timeout as a hard failure so the caller can decide to abort
@@ -812,10 +790,8 @@ def collect_all_marks(
 
     # Load marks mapping - check if file exists even if exit code was non-zero
     test_marks_map: Dict = {}
-    info(
-        f"Checking if marks file exists: {marks_file.exists()}, "
-        f"size: {marks_file.stat().st_size if marks_file.exists() else 0}"
-    )
+    info(f"Checking if marks file exists: {marks_file.exists()}, "
+         f"size: {marks_file.stat().st_size if marks_file.exists() else 0}")
 
     if marks_file.exists() and marks_file.stat().st_size > 0:
         try:
@@ -851,21 +827,13 @@ def collect_all_marks(
 
                         if key not in test_marks_map or not test_marks_map[key]:
                             test_marks_map[key] = marks
-                        if alt_key and (
-                            alt_key not in test_marks_map
-                            or not test_marks_map[alt_key]
-                        ):
+                        if alt_key and (alt_key not in test_marks_map or not test_marks_map[alt_key]):
                             test_marks_map[alt_key] = marks
 
-                        if (
-                            test_func not in test_marks_map
-                            or not test_marks_map[test_func]
-                        ):
+                        if (test_func not in test_marks_map or not test_marks_map[test_func]):
                             test_marks_map[test_func] = marks
 
-                    info(
-                        f"Loaded marks for {len(test_marks_map)} lookup entries from {marks_file}"
-                    )
+                    info(f"Loaded marks for {len(test_marks_map)} lookup entries from {marks_file}")
                     info(f"Marks file saved for analysis: {marks_file}")
                     collection_ok = True
         except yaml.YAMLError as e:
@@ -892,9 +860,7 @@ def collect_all_marks(
         # Additional debug: check if any marks file was created in the tests directory
         possible_files = list(TESTS_DIR.glob("*marks*.yaml"))
         if possible_files:
-            info(
-                f"Found marks files in tests directory: {[f.name for f in possible_files]}"
-            )
+            info(f"Found marks files in tests directory: {[f.name for f in possible_files]}")
             for f in possible_files:
                 try:
                     dest = output_dir / f.name
@@ -1011,19 +977,13 @@ def parse_results_with_marks(result_file: Path, test_marks_map: Dict) -> Dict:
                 grouped_results[op_name][test_case] = data
 
     if matched_count == 0 and total_count > 0:
-        warn(
-            f"WARNING: No tests matched using marks. Using function name extraction for all {total_count} tests."
-        )
+        warn(f"WARNING: No tests matched using marks. Using function name extraction for all {total_count} tests.")
         if test_marks_map:
-            warn(
-                f"Marks map has {len(test_marks_map)} entries. Sample keys: {list(test_marks_map.keys())[:5]}"
-            )
+            warn(f"Marks map has {len(test_marks_map)} entries. Sample keys: {list(test_marks_map.keys())[:5]}")
     elif unmatched_count > 0:
         warn(f"{unmatched_count} test cases had no marks, used function name fallback")
 
-    info(
-        f"Matched {matched_count} test cases with marks, {unmatched_count} with fallback"
-    )
+    info(f"Matched {matched_count} test cases with marks, {unmatched_count} with fallback")
     return grouped_results
 
 
@@ -1055,9 +1015,7 @@ def load_marks_file(marks_file: Path) -> Dict:
 
                     if key not in test_marks_map or not test_marks_map[key]:
                         test_marks_map[key] = marks
-                    if alt_key and (
-                        alt_key not in test_marks_map or not test_marks_map[alt_key]
-                    ):
+                    if alt_key and (alt_key not in test_marks_map or not test_marks_map[alt_key]):
                         test_marks_map[alt_key] = marks
 
                     if test_func not in test_marks_map or not test_marks_map[test_func]:
@@ -1100,9 +1058,7 @@ def run_test_batch(
     cmd = build_pytest_command(ops, args, output_name)
 
     start_time = time.time()
-    return_code, stdout, stderr, duration = run_pytest_with_timeout(
-        cmd, env, args.timeout
-    )
+    return_code, stdout, stderr, duration = run_pytest_with_timeout(cmd, env, args.timeout)
     total_duration = time.time() - start_time
 
     suffix = f"_batch{batch_num}" if batch_num else ""
@@ -1197,20 +1153,17 @@ def run_single_gpu_mode(
         info(f"Testing {len(ops)} operators in batches of {max_ops_per_batch}")
 
         for i in range(0, len(ops), max_ops_per_batch):
-            batch_ops = ops[i : i + max_ops_per_batch]
+            batch_ops = ops[i:i + max_ops_per_batch]
             batch_num = i // max_ops_per_batch + 1
             total_batches = (len(ops) + max_ops_per_batch - 1) // max_ops_per_batch
 
             info(f"\n{'='*70}")
-            info(
-                f"Batch {batch_num}/{total_batches}: Testing {len(batch_ops)} operators"
-            )
+            info(f"Batch {batch_num}/{total_batches}: Testing {len(batch_ops)} operators")
             info(f"{'='*70}")
 
             output_name = f"{output_prefix}_batch{batch_num}.json"
-            success, summary, duration, marks_ok = run_test_batch(
-                batch_ops, args, env, output_dir, batch_num, output_name
-            )
+            success, summary, duration, marks_ok = run_test_batch(batch_ops, args, env, output_dir, batch_num,
+                                                                  output_name)
 
             total_duration += duration
             all_marks_ok = all_marks_ok and marks_ok
@@ -1222,9 +1175,7 @@ def run_single_gpu_mode(
     else:
         info(f"Testing {len(ops)} operators in a single batch")
         output_name = f"{output_prefix}.json"
-        success, summary, duration, marks_ok = run_test_batch(
-            ops, args, env, output_dir, output_name=output_name
-        )
+        success, summary, duration, marks_ok = run_test_batch(ops, args, env, output_dir, output_name=output_name)
         total_duration = duration
         all_marks_ok = marks_ok
 
@@ -1236,9 +1187,7 @@ def run_single_gpu_mode(
     return all_results, total_duration, batch_success, all_marks_ok
 
 
-def run_gpu_worker(
-    gpu_id: int, ops: List[str], args, base_output_dir: Path, base_env: dict
-) -> None:
+def run_gpu_worker(gpu_id: int, ops: List[str], args, base_output_dir: Path, base_env: dict) -> None:
     """
     Worker function to run tests on a specific GPU.
     Executes in a separate process. Results saved to gpu_output_dir/summary.json.
@@ -1260,9 +1209,8 @@ def run_gpu_worker(
 
     # Run tests using single GPU logic with isolated output prefix
     output_prefix = f"accuracy_all_gpu{gpu_id}"
-    all_results, total_duration, batch_success, marks_ok = run_single_gpu_mode(
-        ops, args, env, gpu_output_dir, output_prefix
-    )
+    all_results, total_duration, batch_success, marks_ok = run_single_gpu_mode(ops, args, env, gpu_output_dir,
+                                                                               output_prefix)
 
     if all_results:
         # Build summary matching single GPU format exactly
@@ -1277,17 +1225,13 @@ def run_gpu_worker(
                 "failed": sum(op.get("failed", 0) for op in all_results.values()),
                 "skipped": sum(op.get("skipped", 0) for op in all_results.values()),
                 "errors": sum(op.get("errors", 0) for op in all_results.values()),
-                "not_found": sum(
-                    1 for op in all_results.values() if op.get("status") == "NotFound"
-                ),
+                "not_found": sum(1 for op in all_results.values() if op.get("status") == "NotFound"),
             },
             "skip_lists": {
                 "skip_operators": sorted(SKIP_OPERATORS),
                 "skip_test_patterns": sorted(SKIP_TEST_PATTERNS),
                 "skip_test_files": sorted(SKIP_TEST_FILES),
-                "skip_file_source": (
-                    str(args.skip_file) if args.skip_file else "default"
-                ),
+                "skip_file_source": (str(args.skip_file) if args.skip_file else "default"),
             },
             "operators": all_results,
         }
@@ -1301,9 +1245,7 @@ def run_gpu_worker(
         error(f"GPU {gpu_id}: No results collected")
 
 
-def merge_gpu_summaries(
-    output_dir: Path, gpu_ids: List[int], wall_duration: float, args=None
-) -> Optional[Dict]:
+def merge_gpu_summaries(output_dir: Path, gpu_ids: List[int], wall_duration: float, args=None) -> Optional[Dict]:
     """Merge summaries from multiple GPU workers into a single summary."""
     merged_operators = {}
     merged_totals = {
@@ -1344,31 +1286,28 @@ def merge_gpu_summaries(
 
         # If any GPU failed to collect marks, the merged statistics are
         # considered unreliable.
-        all_marks_ok = all_marks_ok and bool(
-            gpu_summary.get("marks_collection_ok", False)
-        )
+        all_marks_ok = all_marks_ok and bool(gpu_summary.get("marks_collection_ok", False))
 
     if not merged_operators:
         return None
 
     return {
-        "timestamp": datetime.datetime.now().isoformat(),
-        "duration_seconds": wall_duration,
-        "marks_collection_ok": all_marks_ok,
-        "totals": merged_totals,
-        "skip_lists": (
-            skip_lists
-            if skip_lists
-            else {
-                "skip_operators": sorted(SKIP_OPERATORS),
-                "skip_test_patterns": sorted(SKIP_TEST_PATTERNS),
-                "skip_test_files": sorted(SKIP_TEST_FILES),
-                "skip_file_source": (
-                    str(args.skip_file) if args and args.skip_file else "default"
-                ),
-            }
-        ),
-        "operators": merged_operators,
+        "timestamp":
+        datetime.datetime.now().isoformat(),
+        "duration_seconds":
+        wall_duration,
+        "marks_collection_ok":
+        all_marks_ok,
+        "totals":
+        merged_totals,
+        "skip_lists": (skip_lists if skip_lists else {
+            "skip_operators": sorted(SKIP_OPERATORS),
+            "skip_test_patterns": sorted(SKIP_TEST_PATTERNS),
+            "skip_test_files": sorted(SKIP_TEST_FILES),
+            "skip_file_source": (str(args.skip_file) if args and args.skip_file else "default"),
+        }),
+        "operators":
+        merged_operators,
     }
 
 
@@ -1398,12 +1337,8 @@ Examples:
         """,
     )
 
-    parser.add_argument(
-        "--ops", help="Comma-separated list of operator IDs, e.g., 'add,softmax,mul'"
-    )
-    parser.add_argument(
-        "--op-list-file", help="Read operator list from file, one ID per line"
-    )
+    parser.add_argument("--ops", help="Comma-separated list of operator IDs, e.g., 'add,softmax,mul'")
+    parser.add_argument("--op-list-file", help="Read operator list from file, one ID per line")
     parser.add_argument(
         "--gpus",
         default="0",
@@ -1434,12 +1369,10 @@ Examples:
         "--collect-timeout",
         type=int,
         default=1800,
-        help=(
-            "Timeout in seconds for the mark-collection step. "
-            "The collection step imports all test modules and expands "
-            "parametrization, so on slow machines it may take a while. "
-            "Default: 1800"
-        ),
+        help=("Timeout in seconds for the mark-collection step. "
+              "The collection step imports all test modules and expands "
+              "parametrization, so on slow machines it may take a while. "
+              "Default: 1800"),
     )
     parser.add_argument("--verbose", action="store_true", help="Show verbose output")
     parser.add_argument(
@@ -1468,11 +1401,9 @@ Examples:
         "--flaggems-path",
         type=Path,
         default=None,
-        help=(
-            "FlagGems repository root, holding tests/ and conf/. Defaults to "
-            "two levels above this script, i.e. the <FlagGems>/tools/ci/ "
-            "layout. Pass it to run this script from outside the repository."
-        ),
+        help=("FlagGems repository root, holding tests/ and conf/. Defaults to "
+              "two levels above this script, i.e. the <FlagGems>/tools/ci/ "
+              "layout. Pass it to run this script from outside the repository."),
     )
 
     args = parser.parse_args()
@@ -1564,27 +1495,23 @@ Examples:
     patch_dir = tempfile.mkdtemp(prefix="flaggems_deterministic_")
     sitecustomize_path = os.path.join(patch_dir, "sitecustomize.py")
     with open(sitecustomize_path, "w") as f:
-        f.write(
-            "import random\n"
-            "def _fixed_seed(*args, **kwargs):\n"
-            "    random._original_seed(42)\n"
-            "def _fixed_choice(seq):\n"
-            "    if not seq:\n"
-            "        raise IndexError('Cannot choose from an empty sequence')\n"
-            "    return seq[0]\n"
-            "if not hasattr(random, '_original_seed'):\n"
-            "    random._original_seed = random.seed\n"
-            "    random.seed = _fixed_seed\n"
-            "    random._original_choice = random.choice\n"
-            "    random.choice = _fixed_choice\n"
-        )
+        f.write("import random\n"
+                "def _fixed_seed(*args, **kwargs):\n"
+                "    random._original_seed(42)\n"
+                "def _fixed_choice(seq):\n"
+                "    if not seq:\n"
+                "        raise IndexError('Cannot choose from an empty sequence')\n"
+                "    return seq[0]\n"
+                "if not hasattr(random, '_original_seed'):\n"
+                "    random._original_seed = random.seed\n"
+                "    random.seed = _fixed_seed\n"
+                "    random._original_choice = random.choice\n"
+                "    random.choice = _fixed_choice\n")
     atexit.register(lambda d=patch_dir: shutil.rmtree(d, ignore_errors=True))
 
     base_env = os.environ.copy()
     old_pythonpath = base_env.get("PYTHONPATH", "")
-    base_env["PYTHONPATH"] = patch_dir + (
-        os.pathsep + old_pythonpath if old_pythonpath else ""
-    )
+    base_env["PYTHONPATH"] = patch_dir + (os.pathsep + old_pythonpath if old_pythonpath else "")
     # ------------------------------------------------------------------
 
     # Determine execution mode
@@ -1594,9 +1521,7 @@ Examples:
         # ==================== SINGLE GPU MODE ====================
         env = build_gpu_env(base_env, gpu_ids[0])
 
-        all_results, total_duration, batch_success, marks_ok = run_single_gpu_mode(
-            ops, args, env, output_dir
-        )
+        all_results, total_duration, batch_success, marks_ok = run_single_gpu_mode(ops, args, env, output_dir)
 
         if all_results:
             final_summary = {
@@ -1605,26 +1530,18 @@ Examples:
                 "marks_collection_ok": marks_ok,
                 "totals": {
                     "total_ops": len(ops),
-                    "total_cases": sum(
-                        op.get("total", 0) for op in all_results.values()
-                    ),
+                    "total_cases": sum(op.get("total", 0) for op in all_results.values()),
                     "passed": sum(op.get("passed", 0) for op in all_results.values()),
                     "failed": sum(op.get("failed", 0) for op in all_results.values()),
                     "skipped": sum(op.get("skipped", 0) for op in all_results.values()),
                     "errors": sum(op.get("errors", 0) for op in all_results.values()),
-                    "not_found": sum(
-                        1
-                        for op in all_results.values()
-                        if op.get("status") == "NotFound"
-                    ),
+                    "not_found": sum(1 for op in all_results.values() if op.get("status") == "NotFound"),
                 },
                 "skip_lists": {
                     "skip_operators": sorted(SKIP_OPERATORS),
                     "skip_test_patterns": sorted(SKIP_TEST_PATTERNS),
                     "skip_test_files": sorted(SKIP_TEST_FILES),
-                    "skip_file_source": (
-                        str(args.skip_file) if args.skip_file else "default"
-                    ),
+                    "skip_file_source": (str(args.skip_file) if args.skip_file else "default"),
                 },
                 "operators": all_results,
             }
@@ -1639,10 +1556,8 @@ Examples:
             # statistics were produced via the function-name fallback and may
             # be inaccurate. Exit with a distinct code so CI can detect it.
             if not marks_ok:
-                error(
-                    "Mark collection failed; operator-level statistics may be "
-                    "inaccurate (results were produced via function-name fallback)."
-                )
+                error("Mark collection failed; operator-level statistics may be "
+                      "inaccurate (results were produced via function-name fallback).")
                 sys.exit(EXIT_MARKS_COLLECTION_FAILED)
 
             sys.exit(0)
@@ -1686,9 +1601,7 @@ Examples:
 
         # Merge results from all GPUs
         active_gpu_ids = [gid for gid, _ in processes]
-        final_summary = merge_gpu_summaries(
-            output_dir, active_gpu_ids, wall_duration, args
-        )
+        final_summary = merge_gpu_summaries(output_dir, active_gpu_ids, wall_duration, args)
 
         if final_summary:
             summary_file = output_dir / "summary.json"
@@ -1700,10 +1613,8 @@ Examples:
             # Same rule as single-GPU mode: if marks collection failed on any
             # GPU, the merged statistics may be inaccurate.
             if not final_summary.get("marks_collection_ok", False):
-                error(
-                    "Mark collection failed on at least one GPU; operator-level "
-                    "statistics may be inaccurate."
-                )
+                error("Mark collection failed on at least one GPU; operator-level "
+                      "statistics may be inaccurate.")
                 sys.exit(EXIT_MARKS_COLLECTION_FAILED)
 
             sys.exit(0)

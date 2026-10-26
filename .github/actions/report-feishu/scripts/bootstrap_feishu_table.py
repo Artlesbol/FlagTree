@@ -20,7 +20,6 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
 """
 bootstrap_feishu_table.py - Create or repair a Feishu Bitable data table
 
@@ -122,18 +121,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def ensure_fields(
-    token: str, app_token: str, table_id: str, wanted: List[Dict]
-) -> None:
+def ensure_fields(token: str, app_token: str, table_id: str, wanted: List[Dict]) -> None:
     """Add missing fields; report type mismatches and extras."""
     existing = fc.field_types(token, app_token, table_id)
 
     missing = [f for f in wanted if f["field_name"] not in existing]
-    mismatched = [
-        f
-        for f in wanted
-        if f["field_name"] in existing and existing[f["field_name"]] != f["type"]
-    ]
+    mismatched = [f for f in wanted if f["field_name"] in existing and existing[f["field_name"]] != f["type"]]
 
     for field in missing:
         fc.create_field(token, app_token, table_id, field)
@@ -141,10 +134,8 @@ def ensure_fields(
 
     for field in mismatched:
         name = field["field_name"]
-        print(
-            f"[WARN] Field '{name}' is type {existing[name]}, "
-            f"schema expects {field['type']}; left unchanged"
-        )
+        print(f"[WARN] Field '{name}' is type {existing[name]}, "
+              f"schema expects {field['type']}; left unchanged")
 
     extra = sorted(set(existing) - {f["field_name"] for f in wanted})
     if extra:
@@ -200,10 +191,8 @@ def main() -> int:
 
     except fc.FeishuError as e:
         print(f"[ERROR] {e}")
-        print(
-            "\nIf this is a permission error, confirm the app was added as a "
-            "collaborator on the Bitable document with edit rights."
-        )
+        print("\nIf this is a permission error, confirm the app was added as a "
+              "collaborator on the Bitable document with edit rights.")
         return 1
 
 

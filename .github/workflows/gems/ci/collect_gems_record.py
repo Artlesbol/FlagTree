@@ -42,7 +42,6 @@ CTX_PREFIX = "CTX_"
 # Operator-level status values that mean "this operator produced no result".
 _NO_RESULT_STATUSES = {"NotFound", "Not Found", "NOT_FOUND"}
 
-
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -147,9 +146,7 @@ def append_jsonl(path: Optional[Path], rows: List[Dict]) -> bool:
     if path is None or not rows:
         return True
 
-    payload = "".join(
-        json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows
-    ).encode("utf-8")
+    payload = "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows).encode("utf-8")
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -183,10 +180,7 @@ def write_jsonl(path: Optional[Path], rows: List[Dict]) -> bool:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(
-            "".join(
-                json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
-                for row in rows
-            ),
+            "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
             encoding="utf-8",
         )
         tmp.replace(path)
@@ -260,9 +254,7 @@ def job_status(compare: Optional[Dict]) -> str:
     return "success"
 
 
-def build_record(
-    summary: Dict, compare: Optional[Dict], baseline_ref: str = ""
-) -> Dict:
+def build_record(summary: Dict, compare: Optional[Dict], baseline_ref: str = "") -> Dict:
     """Flatten summary + compare report + CI context into one row."""
     totals = summary.get("totals", {}) or {}
     passed = totals.get("passed", 0)
@@ -356,38 +348,32 @@ def compare_fields(compare: Optional[Dict], baseline_ref: str = "") -> Dict:
     # Fall back to the comparison's own label when the baseline dir carried no
     # commit_id.txt (e.g. a hand-run comparison between two arbitrary dirs).
     label = compare.get("baseline_label") or ""
-    fields.update(
-        {
-            "compared": True,
-            "baseline_ref": baseline_ref or (label if label != "Baseline" else None),
-            # Plain token from compare_test_result.py, free of emoji so it can
-            # be filtered and counted directly.
-            "verdict": summary.get("verdict"),
-            "regressions_cnt": totals.get("regressions"),
-            "improvements_cnt": totals.get("improvements"),
-            "warnings_cnt": totals.get("warnings"),
-            "info_changes_cnt": totals.get("info_changes"),
-            "new_operators_cnt": totals.get("new_operators"),
-            "removed_operators_cnt": totals.get("removed_operators"),
-            "delta_passed": delta("passed"),
-            "delta_failed": delta("failed"),
-            "delta_skipped": delta("skipped"),
-            "delta_errors": delta("errors"),
-            "delta_cases": delta("test_cases"),
-            "regressed_ops": join_names(
-                sorted({c.get("operator", "") for c in compare.get("regressions", [])})
-            ),
-            "improved_ops": join_names(
-                sorted({c.get("operator", "") for c in compare.get("improvements", [])})
-            ),
-        }
-    )
+    fields.update({
+        "compared": True,
+        "baseline_ref": baseline_ref or (label if label != "Baseline" else None),
+        # Plain token from compare_test_result.py, free of emoji so it can
+        # be filtered and counted directly.
+        "verdict": summary.get("verdict"),
+        "regressions_cnt": totals.get("regressions"),
+        "improvements_cnt": totals.get("improvements"),
+        "warnings_cnt": totals.get("warnings"),
+        "info_changes_cnt": totals.get("info_changes"),
+        "new_operators_cnt": totals.get("new_operators"),
+        "removed_operators_cnt": totals.get("removed_operators"),
+        "delta_passed": delta("passed"),
+        "delta_failed": delta("failed"),
+        "delta_skipped": delta("skipped"),
+        "delta_errors": delta("errors"),
+        "delta_cases": delta("test_cases"),
+        "regressed_ops": join_names(sorted({c.get("operator", "")
+                                            for c in compare.get("regressions", [])})),
+        "improved_ops": join_names(sorted({c.get("operator", "")
+                                           for c in compare.get("improvements", [])})),
+    })
     return fields
 
 
-def build_operator_rows(
-    record: Dict, summary: Dict, compare: Optional[Dict]
-) -> List[Dict]:
+def build_operator_rows(record: Dict, summary: Dict, compare: Optional[Dict]) -> List[Dict]:
     """One row per operator, for per-operator trend analysis.
 
     Kept out of the run-level table: ~420 operators x 10 backends per day is
@@ -399,36 +385,32 @@ def build_operator_rows(
     if compare:
         for bucket in ("regressions", "warnings", "improvements", "info_changes"):
             for change in compare.get(bucket, []) or []:
-                change_by_op.setdefault(
-                    change.get("operator", ""), change.get("change_type", "")
-                )
+                change_by_op.setdefault(change.get("operator", ""), change.get("change_type", ""))
 
     rows = []
     for name, op in (summary.get("operators", {}) or {}).items():
         status = op.get("status", "Unknown")
-        rows.append(
-            {
-                "record_id": record["record_id"],
-                "backend": record["backend"],
-                "runner": record["runner"],
-                "kind": record["kind"],
-                "flagtree_sha": record["flagtree_sha"],
-                "flaggems_tag": record["flaggems_tag"],
-                "pr_number": record["pr_number"],
-                "tested_at": record["tested_at"],
-                "operator": name,
-                "status": status,
-                "has_result": status not in _NO_RESULT_STATUSES,
-                "total": op.get("total", 0),
-                "passed": op.get("passed", 0),
-                "failed": op.get("failed", 0),
-                "skipped": op.get("skipped", 0),
-                "errors": op.get("errors", 0),
-                "change_type": change_by_op.get(name, ""),
-                "failed_cases": join_names(op.get("failed_cases", []) or [], limit=20),
-                "error_cases": join_names(op.get("error_cases", []) or [], limit=20),
-            }
-        )
+        rows.append({
+            "record_id": record["record_id"],
+            "backend": record["backend"],
+            "runner": record["runner"],
+            "kind": record["kind"],
+            "flagtree_sha": record["flagtree_sha"],
+            "flaggems_tag": record["flaggems_tag"],
+            "pr_number": record["pr_number"],
+            "tested_at": record["tested_at"],
+            "operator": name,
+            "status": status,
+            "has_result": status not in _NO_RESULT_STATUSES,
+            "total": op.get("total", 0),
+            "passed": op.get("passed", 0),
+            "failed": op.get("failed", 0),
+            "skipped": op.get("skipped", 0),
+            "errors": op.get("errors", 0),
+            "change_type": change_by_op.get(name, ""),
+            "failed_cases": join_names(op.get("failed_cases", []) or [], limit=20),
+            "error_cases": join_names(op.get("error_cases", []) or [], limit=20),
+        })
     return rows
 
 
@@ -484,19 +466,15 @@ Examples:
         "--compare",
         type=Path,
         default=None,
-        help=(
-            "Path to compare_report.json (default: compare_report.json next to "
-            "--summary). Missing is tolerated: delta fields stay empty."
-        ),
+        help=("Path to compare_report.json (default: compare_report.json next to "
+              "--summary). Missing is tolerated: delta fields stay empty."),
     )
     parser.add_argument(
         "--baseline-dir",
         type=Path,
         default=None,
-        help=(
-            "Baseline directory, read for commit_id.txt to record which "
-            "baseline the deltas are relative to"
-        ),
+        help=("Baseline directory, read for commit_id.txt to record which "
+              "baseline the deltas are relative to"),
     )
     parser.add_argument(
         "--out-dir",
@@ -514,12 +492,10 @@ Examples:
         "--op-ledger",
         type=Path,
         default=None,
-        help=(
-            "Directory for per-operator rows. Each run writes its own "
-            "<record_id>.jsonl there, so concurrent runners never share a "
-            "file. Passing 'ledger/operators.jsonl' is accepted and means "
-            "the 'ledger/operators' directory."
-        ),
+        help=("Directory for per-operator rows. Each run writes its own "
+              "<record_id>.jsonl there, so concurrent runners never share a "
+              "file. Passing 'ledger/operators.jsonl' is accepted and means "
+              "the 'ledger/operators' directory."),
     )
     parser.add_argument(
         "--no-record-file",
@@ -547,13 +523,11 @@ def main() -> int:
     if args.do_print:
         print(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True))
     else:
-        print(
-            f"[INFO] {record['record_id']} "
-            f"kind={record['kind']} status={record['job_status']} "
-            f"passed={record['passed']}/{record['total_cases']} "
-            f"pass_rate_run={record['pass_rate_run']} "
-            f"verdict={record['verdict']}"
-        )
+        print(f"[INFO] {record['record_id']} "
+              f"kind={record['kind']} status={record['job_status']} "
+              f"passed={record['passed']}/{record['total_cases']} "
+              f"pass_rate_run={record['pass_rate_run']} "
+              f"verdict={record['verdict']}")
 
     if not args.no_record_file:
         out_dir = args.out_dir or args.summary.parent

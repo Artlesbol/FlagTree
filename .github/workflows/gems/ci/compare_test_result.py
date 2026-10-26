@@ -95,7 +95,6 @@ VERDICT_ADVICE = {
     Verdict.ACCEPT: "No critical issues detected.",
 }
 
-
 # Severity mapping for each change type
 CHANGE_SEVERITY = {
     ChangeType.PASSED_TO_FAILED: Severity.CRITICAL,
@@ -284,9 +283,7 @@ class TestComparator:
             skip_lists=data.get("skip_lists", {}),
         )
 
-    def _get_test_status(
-        self, operator_result: Optional[OperatorResult], test_case: str
-    ) -> str:
+    def _get_test_status(self, operator_result: Optional[OperatorResult], test_case: str) -> str:
         """Get the status of a specific test case"""
         if operator_result is None:
             return "NOT_FOUND"
@@ -323,9 +320,7 @@ class TestComparator:
 
         return cases
 
-    def _classify_change(
-        self, baseline_status: str, candidate_status: str
-    ) -> ChangeType:
+    def _classify_change(self, baseline_status: str, candidate_status: str) -> ChangeType:
         """Classify the change between two statuses"""
         key = f"{baseline_status}_TO_{candidate_status}"
         try:
@@ -336,9 +331,7 @@ class TestComparator:
 
     def compare(self) -> ComparisonReport:
         """Execute the comparison"""
-        all_operators = set(self.baseline.operators.keys()) | set(
-            self.candidate.operators.keys()
-        )
+        all_operators = set(self.baseline.operators.keys()) | set(self.candidate.operators.keys())
 
         report = ComparisonReport(
             timestamp=datetime.datetime.now().isoformat(),
@@ -505,6 +498,7 @@ class ReportGenerator:
     @staticmethod
     def to_json(report: ComparisonReport, pretty: bool = True) -> str:
         """Convert report to JSON"""
+
         def convert(obj):
             if isinstance(obj, Enum):
                 return obj.value
@@ -527,14 +521,10 @@ class ReportGenerator:
 
         # Header
         lines.append("## 🧪 Test Comparison Report")
-        lines.append(
-            f"\n**Baseline**{_label_suffix(report.baseline_label, 'Baseline')}: "
-            f"`{report.baseline_path}`"
-        )
-        lines.append(
-            f"**Candidate**{_label_suffix(report.candidate_label, 'Candidate')}: "
-            f"`{report.candidate_path}`"
-        )
+        lines.append(f"\n**Baseline**{_label_suffix(report.baseline_label, 'Baseline')}: "
+                     f"`{report.baseline_path}`")
+        lines.append(f"**Candidate**{_label_suffix(report.candidate_label, 'Candidate')}: "
+                     f"`{report.candidate_path}`")
         lines.append(f"**Report Time**: {report.timestamp}")
 
         # Overall Summary
@@ -543,36 +533,24 @@ class ReportGenerator:
         lines.append("|--------|----------|-----------|-------|")
 
         stats = report.statistics
-        lines.append(
-            f"| Total Operators | {stats['operators']['baseline']} "
-            f"| {stats['operators']['candidate']} "
-            f"| {stats['operators']['delta']:+d} |"
-        )
-        lines.append(
-            f"| Total Test Cases | {stats['test_cases']['baseline']} "
-            f"| {stats['test_cases']['candidate']} "
-            f"| {stats['test_cases']['delta']:+d} |"
-        )
-        lines.append(
-            f"| ✅ Passed | {stats['passed']['baseline']} "
-            f"| {stats['passed']['candidate']} "
-            f"| {stats['passed']['delta']:+d} |"
-        )
-        lines.append(
-            f"| ❌ Failed | {stats['failed']['baseline']} "
-            f"| {stats['failed']['candidate']} "
-            f"| {stats['failed']['delta']:+d} |"
-        )
-        lines.append(
-            f"| ⏭️ Skipped | {stats['skipped']['baseline']} "
-            f"| {stats['skipped']['candidate']} "
-            f"| {stats['skipped']['delta']:+d} |"
-        )
-        lines.append(
-            f"| ⚠ Errors | {stats['errors']['baseline']} "
-            f"| {stats['errors']['candidate']} "
-            f"| {stats['errors']['delta']:+d} |"
-        )
+        lines.append(f"| Total Operators | {stats['operators']['baseline']} "
+                     f"| {stats['operators']['candidate']} "
+                     f"| {stats['operators']['delta']:+d} |")
+        lines.append(f"| Total Test Cases | {stats['test_cases']['baseline']} "
+                     f"| {stats['test_cases']['candidate']} "
+                     f"| {stats['test_cases']['delta']:+d} |")
+        lines.append(f"| ✅ Passed | {stats['passed']['baseline']} "
+                     f"| {stats['passed']['candidate']} "
+                     f"| {stats['passed']['delta']:+d} |")
+        lines.append(f"| ❌ Failed | {stats['failed']['baseline']} "
+                     f"| {stats['failed']['candidate']} "
+                     f"| {stats['failed']['delta']:+d} |")
+        lines.append(f"| ⏭️ Skipped | {stats['skipped']['baseline']} "
+                     f"| {stats['skipped']['candidate']} "
+                     f"| {stats['skipped']['delta']:+d} |")
+        lines.append(f"| ⚠ Errors | {stats['errors']['baseline']} "
+                     f"| {stats['errors']['candidate']} "
+                     f"| {stats['errors']['delta']:+d} |")
 
         # Changes Summary
         lines.append("\n### 🔄 Changes Summary")
@@ -590,9 +568,7 @@ class ReportGenerator:
                 lines.append(f"- ... and {len(report.new_operators) - 10} more")
 
         if report.removed_operators:
-            lines.append(
-                f"\n### ❌ Removed Operators ({len(report.removed_operators)})"
-            )
+            lines.append(f"\n### ❌ Removed Operators ({len(report.removed_operators)})")
             for op in report.removed_operators[:10]:
                 lines.append(f"- `{op}`")
             if len(report.removed_operators) > 10:
@@ -604,15 +580,11 @@ class ReportGenerator:
             lines.append("| Operator | Test Case | Baseline | Candidate |")
             lines.append("|----------|-----------|----------|-----------|")
             for change in report.regressions[:20]:
-                lines.append(
-                    f"| `{change.operator}` | `{change.test_case}` |"
-                    f" {change.baseline_status} | {change.candidate_status} |"
-                )
+                lines.append(f"| `{change.operator}` | `{change.test_case}` |"
+                             f" {change.baseline_status} | {change.candidate_status} |")
             if len(report.regressions) > 20:
                 lines.append("| ... | ... | ... | ... |")
-                lines.append(
-                    f"| **Total** | **{len(report.regressions)} regressions** | | |"
-                )
+                lines.append(f"| **Total** | **{len(report.regressions)} regressions** | | |")
 
         # Improvements
         if report.improvements:
@@ -620,15 +592,11 @@ class ReportGenerator:
             lines.append("| Operator | Test Case | Baseline | Candidate |")
             lines.append("|----------|-----------|----------|-----------|")
             for change in report.improvements[:20]:
-                lines.append(
-                    f"| `{change.operator}` | `{change.test_case}` |"
-                    f" {change.baseline_status} | {change.candidate_status} |"
-                )
+                lines.append(f"| `{change.operator}` | `{change.test_case}` |"
+                             f" {change.baseline_status} | {change.candidate_status} |")
             if len(report.improvements) > 20:
                 lines.append("| ... | ... | ... | ... |")
-                lines.append(
-                    f"| **Total** | **{len(report.improvements)} improvements** | | |"
-                )
+                lines.append(f"| **Total** | **{len(report.improvements)} improvements** | | |")
 
         # Warnings
         if report.warnings:
@@ -637,9 +605,7 @@ class ReportGenerator:
             lines.append("|----------|-----------|--------|")
             for change in report.warnings[:10]:
                 label = CHANGE_LABELS.get(change.change_type, change.change_type.value)
-                lines.append(
-                    f"| `{change.operator}` | `{change.test_case}` | {label} |"
-                )
+                lines.append(f"| `{change.operator}` | `{change.test_case}` | {label} |")
             if len(report.warnings) > 10:
                 lines.append("| ... | ... | ... |")
                 lines.append(f"| **Total** | **{len(report.warnings)} warnings** | |")
@@ -647,9 +613,7 @@ class ReportGenerator:
         # Recommendation
         lines.append("\n### 📝 Recommendation")
         verdict = Verdict(report.summary["verdict"])
-        lines.append(
-            f"{VERDICT_EMOJI[verdict]} **{verdict.value}** - {VERDICT_ADVICE[verdict]}"
-        )
+        lines.append(f"{VERDICT_EMOJI[verdict]} **{verdict.value}** - {VERDICT_ADVICE[verdict]}")
 
         return "\n".join(lines)
 
@@ -684,18 +648,14 @@ class ReportGenerator:
         lines.append("─" * 80)
 
         stats = report.statistics
-        lines.append(
-            f"{'Total Operators':<20} "
-            f"{stats['operators']['baseline']:>12} "
-            f"{stats['operators']['candidate']:>12} "
-            f"{stats['operators']['delta']:>+10}"
-        )
-        lines.append(
-            f"{'Total Test Cases':<20} "
-            f"{stats['test_cases']['baseline']:>12} "
-            f"{stats['test_cases']['candidate']:>12} "
-            f"{stats['test_cases']['delta']:>+10}"
-        )
+        lines.append(f"{'Total Operators':<20} "
+                     f"{stats['operators']['baseline']:>12} "
+                     f"{stats['operators']['candidate']:>12} "
+                     f"{stats['operators']['delta']:>+10}")
+        lines.append(f"{'Total Test Cases':<20} "
+                     f"{stats['test_cases']['baseline']:>12} "
+                     f"{stats['test_cases']['candidate']:>12} "
+                     f"{stats['test_cases']['delta']:>+10}")
 
         if has_color:
 
@@ -716,45 +676,33 @@ class ReportGenerator:
         candidate_total = stats["test_cases"]["candidate"]
 
         if baseline_total > 0:
-            baseline_pass_rate = (
-                f"({stats['passed']['baseline'] * 100 / baseline_total:.1f}%)"
-            )
+            baseline_pass_rate = (f"({stats['passed']['baseline'] * 100 / baseline_total:.1f}%)")
         else:
             baseline_pass_rate = "(0.0%)"
 
         if candidate_total > 0:
-            candidate_pass_rate = (
-                f"({stats['passed']['candidate'] * 100 / candidate_total:.1f}%)"
-            )
+            candidate_pass_rate = (f"({stats['passed']['candidate'] * 100 / candidate_total:.1f}%)")
         else:
             candidate_pass_rate = "(0.0%)"
 
-        lines.append(
-            f"{'✅ Passed':<20} "
-            f"{stats['passed']['baseline']:>8} "
-            f"{baseline_pass_rate:>6} "
-            f"{stats['passed']['candidate']:>8} "
-            f"{candidate_pass_rate:>6} "
-            f"{color_delta(stats['passed']['delta']):>10}"
-        )
-        lines.append(
-            f"{'❌ Failed':<20} "
-            f"{stats['failed']['baseline']:>12} "
-            f"{stats['failed']['candidate']:>12} "
-            f"{color_delta(stats['failed']['delta']):>10}"
-        )
-        lines.append(
-            f"{'⏭ Skipped':<20} "
-            f"{stats['skipped']['baseline']:>12} "
-            f"{stats['skipped']['candidate']:>12} "
-            f"{color_delta(stats['skipped']['delta']):>10}"
-        )
-        lines.append(
-            f"{'⚠ Errors':<20} "
-            f"{stats['errors']['baseline']:>12} "
-            f"{stats['errors']['candidate']:>12} "
-            f"{color_delta(stats['errors']['delta']):>10}"
-        )
+        lines.append(f"{'✅ Passed':<20} "
+                     f"{stats['passed']['baseline']:>8} "
+                     f"{baseline_pass_rate:>6} "
+                     f"{stats['passed']['candidate']:>8} "
+                     f"{candidate_pass_rate:>6} "
+                     f"{color_delta(stats['passed']['delta']):>10}")
+        lines.append(f"{'❌ Failed':<20} "
+                     f"{stats['failed']['baseline']:>12} "
+                     f"{stats['failed']['candidate']:>12} "
+                     f"{color_delta(stats['failed']['delta']):>10}")
+        lines.append(f"{'⏭ Skipped':<20} "
+                     f"{stats['skipped']['baseline']:>12} "
+                     f"{stats['skipped']['candidate']:>12} "
+                     f"{color_delta(stats['skipped']['delta']):>10}")
+        lines.append(f"{'⚠ Errors':<20} "
+                     f"{stats['errors']['baseline']:>12} "
+                     f"{stats['errors']['candidate']:>12} "
+                     f"{color_delta(stats['errors']['delta']):>10}")
         lines.append("─" * 80)
 
         # Changes Summary
@@ -775,14 +723,11 @@ class ReportGenerator:
                 return f"{emoji} {count}"
 
         lines.append(
-            f"  {color_severity(len(report.regressions), '🔴', colorama.Fore.RED if has_color else '')} Regressions"
-        )
+            f"  {color_severity(len(report.regressions), '🔴', colorama.Fore.RED if has_color else '')} Regressions")
         lines.append(
-            f"  {color_severity(len(report.improvements), '🟢', colorama.Fore.GREEN if has_color else '')} Improvements"
-        )
+            f"  {color_severity(len(report.improvements), '🟢', colorama.Fore.GREEN if has_color else '')} Improvements")
         lines.append(
-            f"  {color_severity(len(report.warnings), '🟡', colorama.Fore.YELLOW if has_color else '')} Warnings"
-        )
+            f"  {color_severity(len(report.warnings), '🟡', colorama.Fore.YELLOW if has_color else '')} Warnings")
         lines.append(f"  ℹ️ {len(report.info_changes)} Info Changes")
 
         # New/Removed Operators
@@ -806,17 +751,13 @@ class ReportGenerator:
         if report.regressions:
             lines.append("")
             if has_color:
-                lines.append(
-                    f"{colorama.Fore.RED}🔴 Regressions ({len(report.regressions)}){colorama.Style.RESET_ALL}"
-                )
+                lines.append(f"{colorama.Fore.RED}🔴 Regressions ({len(report.regressions)}){colorama.Style.RESET_ALL}")
             else:
                 lines.append(f"🔴 Regressions ({len(report.regressions)})")
             lines.append("─" * 80)
             for change in report.regressions[:10]:
                 lines.append(f"  {change.operator}: {change.test_case}")
-                lines.append(
-                    f"    {change.baseline_status} → {change.candidate_status}"
-                )
+                lines.append(f"    {change.baseline_status} → {change.candidate_status}")
             if len(report.regressions) > 10:
                 lines.append(f"  ... and {len(report.regressions) - 10} more")
 
@@ -825,16 +766,13 @@ class ReportGenerator:
             lines.append("")
             if has_color:
                 lines.append(
-                    f"{colorama.Fore.GREEN}🟢 Improvements ({len(report.improvements)}){colorama.Style.RESET_ALL}"
-                )
+                    f"{colorama.Fore.GREEN}🟢 Improvements ({len(report.improvements)}){colorama.Style.RESET_ALL}")
             else:
                 lines.append(f"🟢 Improvements ({len(report.improvements)})")
             lines.append("─" * 80)
             for change in report.improvements[:10]:
                 lines.append(f"  {change.operator}: {change.test_case}")
-                lines.append(
-                    f"    {change.baseline_status} → {change.candidate_status}"
-                )
+                lines.append(f"    {change.baseline_status} → {change.candidate_status}")
             if len(report.improvements) > 10:
                 lines.append(f"  ... and {len(report.improvements) - 10} more")
 
@@ -842,18 +780,14 @@ class ReportGenerator:
         if report.warnings:
             lines.append("")
             if has_color:
-                lines.append(
-                    f"{colorama.Fore.YELLOW}🟡 Warnings ({len(report.warnings)}){colorama.Style.RESET_ALL}"
-                )
+                lines.append(f"{colorama.Fore.YELLOW}🟡 Warnings ({len(report.warnings)}){colorama.Style.RESET_ALL}")
             else:
                 lines.append(f"🟡 Warnings ({len(report.warnings)})")
             lines.append("─" * 80)
             for change in report.warnings[:10]:
                 label = CHANGE_LABELS.get(change.change_type, change.change_type.value)
                 lines.append(f"  {change.operator}: {change.test_case}")
-                lines.append(
-                    f"    {change.baseline_status} → {change.candidate_status} ({label})"
-                )
+                lines.append(f"    {change.baseline_status} → {change.candidate_status} ({label})")
             if len(report.warnings) > 10:
                 lines.append(f"  ... and {len(report.warnings) - 10} more")
 
@@ -865,9 +799,7 @@ class ReportGenerator:
             for change in report.info_changes[:10]:
                 label = CHANGE_LABELS.get(change.change_type, change.change_type.value)
                 lines.append(f"  {change.operator}: {change.test_case}")
-                lines.append(
-                    f"    {change.baseline_status} → {change.candidate_status} ({label})"
-                )
+                lines.append(f"    {change.baseline_status} → {change.candidate_status} ({label})")
             if len(report.info_changes) > 10:
                 lines.append(f"  ... and {len(report.info_changes) - 10} more")
 
@@ -906,9 +838,7 @@ SAVE_FORMATS = {
 }
 
 
-def save_reports(
-    report: ComparisonReport, save_dir: Path, formats: List[str]
-) -> bool:
+def save_reports(report: ComparisonReport, save_dir: Path, formats: List[str]) -> bool:
     """Save the comparison report into save_dir, one file per format.
 
     Writes <save_dir>/compare_report.<ext>. Each file is written to a temporary
@@ -973,12 +903,8 @@ Examples:
         """,
     )
 
-    parser.add_argument(
-        "--baseline", required=True, type=Path, help="Path to baseline summary.json"
-    )
-    parser.add_argument(
-        "--candidate", required=True, type=Path, help="Path to candidate summary.json"
-    )
+    parser.add_argument("--baseline", required=True, type=Path, help="Path to baseline summary.json")
+    parser.add_argument("--candidate", required=True, type=Path, help="Path to candidate summary.json")
     parser.add_argument(
         "--baseline-label",
         type=str,
@@ -1000,10 +926,8 @@ Examples:
         "--save-dir",
         type=Path,
         default=None,
-        help=(
-            f"Directory to save {REPORT_BASENAME}.* "
-            "(default: the directory holding the candidate summary)"
-        ),
+        help=(f"Directory to save {REPORT_BASENAME}.* "
+              "(default: the directory holding the candidate summary)"),
     )
     parser.add_argument(
         "--save-format",
@@ -1011,12 +935,10 @@ Examples:
         action="append",
         default=None,
         metavar="FORMAT",
-        help=(
-            "Format to save; repeatable. "
-            f"Choices: {', '.join(sorted(SAVE_FORMATS))}. "
-            "Does not affect the console report on stdout. "
-            "(default: save all formats)"
-        ),
+        help=("Format to save; repeatable. "
+              f"Choices: {', '.join(sorted(SAVE_FORMATS))}. "
+              "Does not affect the console report on stdout. "
+              "(default: save all formats)"),
     )
     parser.add_argument(
         "--no-save",
@@ -1036,9 +958,7 @@ Examples:
         sys.exit(1)
 
     # Compare
-    comparator = TestComparator(
-        args.baseline, args.candidate, args.baseline_label, args.candidate_label
-    )
+    comparator = TestComparator(args.baseline, args.candidate, args.baseline_label, args.candidate_label)
 
     if not comparator.load_summaries():
         print("[ERROR] Failed to load summaries")

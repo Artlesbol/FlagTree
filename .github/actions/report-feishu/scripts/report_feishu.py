@@ -20,7 +20,6 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
 """
 report_feishu.py - Push flat JSON records to a Feishu Bitable table
 
@@ -148,10 +147,8 @@ Examples:
     parser.add_argument(
         "--dedup-field",
         default=None,
-        help=(
-            "Field to deduplicate on. An existing row with the same value is "
-            "updated instead of a second row being added."
-        ),
+        help=("Field to deduplicate on. An existing row with the same value is "
+              "updated instead of a second row being added."),
     )
     parser.add_argument(
         "--dry-run",
@@ -174,9 +171,7 @@ def resolve_table(args: argparse.Namespace, token: str, app_token: str) -> str:
         raise fc.FeishuError("--table-id or --table-name is required")
     table_id = fc.find_table(token, app_token, args.table_name)
     if not table_id:
-        raise fc.FeishuError(
-            f"No table named '{args.table_name}'. Run bootstrap_feishu_table.py first."
-        )
+        raise fc.FeishuError(f"No table named '{args.table_name}'. Run bootstrap_feishu_table.py first.")
     return table_id
 
 
@@ -208,9 +203,7 @@ def report(args: argparse.Namespace, rows: List[Dict]) -> None:
         if not key:
             to_create.append(row)
             continue
-        existing = fc.find_records(
-            token, app_token, table_id, args.dedup_field, str(key)
-        )
+        existing = fc.find_records(token, app_token, table_id, args.dedup_field, str(key))
         if existing:
             # Overwrite in place: a rerun of the same attempt should correct
             # its own row, not add a near-duplicate.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2025-     FlagOS Contributors
@@ -20,7 +19,6 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
 """
 feishu_client.py - Minimal Feishu (Lark) Bitable client
 
@@ -99,10 +97,8 @@ def _request(
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
             if result.get("code") not in (0, None):
-                raise FeishuError(
-                    f"{method} {url} -> code={result.get('code')} "
-                    f"msg={result.get('msg')}"
-                )
+                raise FeishuError(f"{method} {url} -> code={result.get('code')} "
+                                  f"msg={result.get('msg')}")
             return result
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")[:500]
@@ -125,9 +121,7 @@ def get_token() -> str:
     app_id = os.environ.get("FEISHU_APP_ID", "").strip()
     app_secret = os.environ.get("FEISHU_APP_SECRET", "").strip()
     if not app_id or not app_secret:
-        raise FeishuError(
-            "FEISHU_APP_ID / FEISHU_APP_SECRET must be set in the environment"
-        )
+        raise FeishuError("FEISHU_APP_ID / FEISHU_APP_SECRET must be set in the environment")
     result = _request(
         "POST",
         f"{API_BASE}/auth/v3/tenant_access_token/internal",
@@ -138,10 +132,7 @@ def get_token() -> str:
 
 def credentials_present() -> bool:
     """True when both credentials are set, so callers can skip silently."""
-    return bool(
-        os.environ.get("FEISHU_APP_ID", "").strip()
-        and os.environ.get("FEISHU_APP_SECRET", "").strip()
-    )
+    return bool(os.environ.get("FEISHU_APP_ID", "").strip() and os.environ.get("FEISHU_APP_SECRET", "").strip())
 
 
 # ============================================================================
@@ -205,11 +196,7 @@ def list_fields(token: str, app_token: str, table_id: str) -> List[Dict]:
 
 def field_types(token: str, app_token: str, table_id: str) -> Dict[str, int]:
     """Map of field_name -> type code, used to coerce values before writing."""
-    return {
-        f["field_name"]: f.get("type")
-        for f in list_fields(token, app_token, table_id)
-        if f.get("field_name")
-    }
+    return {f["field_name"]: f.get("type") for f in list_fields(token, app_token, table_id) if f.get("field_name")}
 
 
 def create_field(token: str, app_token: str, table_id: str, field: Dict) -> None:
@@ -231,9 +218,7 @@ def _records_url(app_token: str, table_id: str) -> str:
     return f"{_tables_url(app_token)}/{table_id}/records"
 
 
-def find_records(
-    token: str, app_token: str, table_id: str, field: str, value: str
-) -> List[str]:
+def find_records(token: str, app_token: str, table_id: str, field: str, value: str) -> List[str]:
     """record_ids whose `field` equals `value`.
 
     Used for idempotent writes: a rerun of the same CI attempt should update
@@ -242,9 +227,7 @@ def find_records(
     payload = {
         "filter": {
             "conjunction": "and",
-            "conditions": [
-                {"field_name": field, "operator": "is", "value": [str(value)]}
-            ],
+            "conditions": [{"field_name": field, "operator": "is", "value": [str(value)]}],
         },
         "field_names": [field],
     }
@@ -253,14 +236,12 @@ def find_records(
     return [item["record_id"] for item in (data.get("items") or [])]
 
 
-def create_records(
-    token: str, app_token: str, table_id: str, rows: List[Dict]
-) -> int:
+def create_records(token: str, app_token: str, table_id: str, rows: List[Dict]) -> int:
     """Batch-create rows, chunked to the API limit. Returns rows written."""
     url = f"{_records_url(app_token, table_id)}/batch_create"
     written = 0
     for start in range(0, len(rows), MAX_BATCH):
-        chunk = rows[start : start + MAX_BATCH]
+        chunk = rows[start:start + MAX_BATCH]
         _request(
             "POST",
             url,
@@ -273,9 +254,7 @@ def create_records(
     return written
 
 
-def update_record(
-    token: str, app_token: str, table_id: str, record_id: str, row: Dict
-) -> None:
+def update_record(token: str, app_token: str, table_id: str, record_id: str, row: Dict) -> None:
     """Overwrite the fields of one existing row."""
     _request(
         "PUT",

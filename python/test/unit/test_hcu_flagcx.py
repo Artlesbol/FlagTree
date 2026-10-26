@@ -179,6 +179,7 @@ class HCUFlagCXTests(unittest.TestCase):
 
         for mismatch in ("older", "mixed"):
             with self.subTest(mismatch=mismatch):
+
                 def incompatible(cmd, **kwargs):
                     if cmd[0].endswith("hipcc"):
                         return "clang version 17.0.0\n"

@@ -73,4 +73,8 @@ jobs:
         export PYTHONPATH=${LLVM_SYSPATH}/python_packages/mlir_core:$PYTHONPATH
         export LD_LIBRARY_PATH=$TX8_DEPS_ROOT/lib:$LD_LIBRARY_PATH
         export PATH=${LLVM_BINARY_DIR}:${PATH}
-    secrets: inherit
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+      FLAGTREE_FEISHU_APP_ID: ${{ secrets.FLAGTREE_FEISHU_APP_ID }}
+      FLAGTREE_FEISHU_APP_SECRET: ${{ secrets.FLAGTREE_FEISHU_APP_SECRET }}
+      FLAGTREE_FEISHU_BITABLE_APP_TOKEN: ${{ secrets.FLAGTREE_FEISHU_BITABLE_APP_TOKEN }}

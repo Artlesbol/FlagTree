@@ -62,4 +62,5 @@ jobs:
             export LD_PRELOAD="$libgomp_path${LD_PRELOAD:+:$LD_PRELOAD}"
           fi
         fi
-    secrets: inherit
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}

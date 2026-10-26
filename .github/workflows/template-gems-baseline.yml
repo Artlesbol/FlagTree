@@ -61,14 +61,19 @@ on:
         required: false
         type: string
         default: ''
-    # Callers pass `secrets: inherit`, so repository secrets arrive under their
-    # own names and are referenced directly below. Secrets are NOT declared
-    # here: a declared name like `feishu-app-id` could never be satisfied,
-    # because GitHub secret names may not contain hyphens.
-    #
-    # Optional, reporting is skipped when absent:
-    #   FLAGTREE_FEISHU_APP_ID, FLAGTREE_FEISHU_APP_SECRET,
-    #   FLAGTREE_FEISHU_BITABLE_APP_TOKEN
+    secrets:
+      github-token:
+        description: 'Token for label lookups. Kept required for compatibility.'
+        required: true
+      # Reporting credentials. Optional: when a caller does not forward them
+      # the reporting step finds no credentials and skips, which keeps this
+      # template usable from branches that have not been updated.
+      FLAGTREE_FEISHU_APP_ID:
+        required: false
+      FLAGTREE_FEISHU_APP_SECRET:
+        required: false
+      FLAGTREE_FEISHU_BITABLE_APP_TOKEN:
+        required: false
 
 env:
   FLAGGEMS_CI_DIR: '/root/flaggems_ci'

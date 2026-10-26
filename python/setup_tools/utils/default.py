@@ -19,6 +19,7 @@
 # SOFTWARE.
 
 import subprocess
+import json
 import os
 from pathlib import Path
 import shutil
@@ -32,7 +33,26 @@ def printinfo(msgs):
     print(f" [TLE-DIST-INFO]: {msgs}.")
 
 
+def configure_flagcx_source(relative_path, *, url=None, commit_id=None, source_dir=None):
+    """Select a backend's source location without changing another backend's pin."""
+    from python.setup_tools.utils import flagtree_submodules
+    from python.setup_tools.utils.tools import flagtree_configs
+
+    dependency = flagtree_submodules.get("flagcx")
+    if dependency is None:
+        return
+    if url is not None:
+        dependency.url = url
+    if commit_id is not None:
+        dependency.commit_id = commit_id
+    dependency.dst_path = str(Path(source_dir).expanduser().resolve()) if source_dir else str(
+        Path(flagtree_configs.flagtree_submodule_dir) / relative_path)
+
+
 class FlagCXRegistrar:
+
+    always_rebuild = False
+    require_header_manifest = False
 
     def __init__(self, external):
         self.bitcode_name = "libflagcx_device.bc"
@@ -78,8 +98,13 @@ class FlagCXRegistrar:
         self.flagcx_src_dir = submodule.dst_path
         self.flagtree_dir = flagtree_config.flagtree_root_dir
         self.src_lib_dir = Path(self.flagcx_src_dir) / "build" / "lib"
-        self.cache_lib_dir = Path(flagtree_cache.dir_path) / "flagcx"
+        self.cache_root_dir = Path(flagtree_cache.dir_path) / "flagcx"
+        self.cache_lib_dir = self.cache_root_dir
         flagtree_cache._create_subdir(subdir_name="flagcx")
+        self._set_library_paths()
+
+    def _set_library_paths(self):
+        """Refresh artifact paths after a backend selects its build/cache tree."""
         for lib_name in (self.bitcode_name, self.shared_lib_name):
             src_path = self.src_lib_dir / lib_name
             cache_path = self.cache_lib_dir / lib_name
@@ -102,48 +127,77 @@ class FlagCXRegistrar:
 
     def _compile_and_cache(self):
         cmds = self.get_compile_cmds()
-        is_unused_cache = self._is_cache_available()
-        is_recompile = self._is_flagcx_recompile_required()
-        is_unused_cache = is_unused_cache or is_recompile
-
+        # Preserve the existing registrar's cache decision convention. HCU's
+        # always_rebuild policy independently disables reuse of cached outputs.
+        reuse_cache = not self._is_cache_available()
+        rebuild = self.always_rebuild or self._is_flagcx_recompile_required()
+        # Backends may associate both outputs with one unified make target.
+        # Treat them as a group, so the command runs once and partial caches
+        # cannot mix host/device artifacts from different builds.
+        groups = {}
         for lib_name, cmd in cmds.items():
-            cache_path = getattr(self, f"{lib_name.split('.')[0]}_cache_path")
-            src_path = getattr(self, f"{lib_name.split('.')[0]}_src_path")
-            runtime_path = self._get_runtime_path(lib_name)
-            if cache_path.exists() and not is_unused_cache:
-                printinfo(f"{lib_name} already exists in cache, skipping compilation ...")
-                shutil.copy(cache_path, runtime_path)
-            elif src_path.exists() and not is_recompile:
-                printinfo(f"{lib_name} already exists in build directory, copying to cache...")
-                shutil.copy(src_path, cache_path)
-                shutil.copy(src_path, runtime_path)
-                printinfo(f"{lib_name} copied from {src_path} to cache at {cache_path}")
-                printinfo(f"{lib_name} copied from {src_path} to cache at {runtime_path}")
+            groups.setdefault(tuple(cmd), []).append(lib_name)
+        for cmd, names in groups.items():
+            sources = [getattr(self, f"{name.split('.')[0]}_src_path") for name in names]
+            cached = [getattr(self, f"{name.split('.')[0]}_cache_path") for name in names]
+            use_cached = not rebuild and reuse_cache and all(path.is_file() for path in cached)
+            if use_cached:
+                artifacts = cached
             else:
-                printinfo(f"Compiling {lib_name} in {self.flagcx_src_dir}...")
-                subprocess.run(cmd, cwd=self.flagcx_src_dir, check=True)
-                if not src_path.exists():
-                    raise FileNotFoundError(f"Expected {lib_name} not found: {src_path}")
-                printinfo(f"{lib_name} compilation completed.")
-                shutil.copy(src_path, cache_path)
-                shutil.copy(src_path, runtime_path)
-                printinfo(f"{lib_name} copied from {src_path} to cache at {cache_path}")
-                printinfo(f"{lib_name} copied from {src_path} to cache at {runtime_path}")
+                if rebuild or not all(path.is_file() for path in sources):
+                    printinfo(f"Compiling {', '.join(names)} in {self.flagcx_src_dir}")
+                    subprocess.run(list(cmd), cwd=self.flagcx_src_dir, check=True)
+                artifacts = sources
+            for path in artifacts:
+                if not path.is_file():
+                    raise FileNotFoundError(f"Expected FlagCX build artifact not found: {path}")
+            self.cache_lib_dir.mkdir(parents=True, exist_ok=True)
+            for name, artifact, cache_path in zip(names, artifacts, cached):
+                runtime_path = self._get_runtime_path(name)
+                runtime_path.parent.mkdir(parents=True, exist_ok=True)
+                if not use_cached:
+                    shutil.copy2(artifact, cache_path)
+                shutil.copy2(artifact, runtime_path)
+
+    def _json_include_dir(self):
+        """Find the header-only JSON dependency, initializing it if necessary."""
+        source = Path(self.flagcx_src_dir)
+        override = os.environ.get("JSON_INCLUDE_DIR")
+        candidates = [Path(override).expanduser()] if override else [
+            source / "third-party/json/single_include", Path("/usr/include"),
+        ]
+        for candidate in candidates:
+            if (candidate / "nlohmann/json.hpp").is_file():
+                return candidate.resolve()
+        if override:
+            raise RuntimeError(f"nlohmann/json.hpp is missing under JSON_INCLUDE_DIR={override}")
+        if (source / ".git").exists():
+            subprocess.run(["git", "submodule", "update", "--init", "--", "third-party/json"], cwd=source, check=True)
+        candidate = source / "third-party/json/single_include"
+        if not (candidate / "nlohmann/json.hpp").is_file():
+            raise RuntimeError("FlagCX needs nlohmann/json.hpp. Install nlohmann-json3-dev, initialize "
+                               "FlagCX's third-party/json submodule, or set JSON_INCLUDE_DIR.")
+        return candidate.resolve()
 
     def _get_required_src_files_paths(self):
         whl_path = self._get_flagcx_wheel_path()
         if whl_path is None:
-            return {
-                "wrapper": Path(self.flagcx_src_dir) / "plugin" / "interservice" / "flagcx_wrapper.py", "include":
-                Path(self.flagcx_src_dir) / "flagcx" / "include"
-            }
+            source = Path(self.flagcx_src_dir)
+            wrappers = (source / "plugin/interservice/flagcx_wrapper.py", source / "src/flagcx/api.py")
+            wrapper = next((path for path in wrappers if path.is_file()), wrappers[0])
+            exported = self.src_lib_dir.parent / "include"
+            if self.require_header_manifest or (exported / ".flagcx_device_headers").is_file():
+                include = exported
+            else:
+                include = source / "flagcx/include"
+            return {"wrapper": wrapper, "include": include}
         return {"wrapper": whl_path / "api.py", "include": whl_path / "include"}
 
     def _get_required_dst_files_paths(self):
         return {
             "wrapper":
             (Path(self.flagtree_dir) / "python" / "triton" / "experimental" / "tle" / "language" / "flagcx_wrapper.py",
-             Path(self.flagtree_dir) / "third_party" / "nvidia" / "backend" / "flagcx_wrapper.py"), "include":
+             Path(self.flagtree_dir) / "third_party" / self.backend_name / "backend" / "flagcx_wrapper.py"), "include":
             (Path(self.flagtree_dir) / "python" / "triton" / "experimental" / "tle" / "language" / "include", )
         }
 
@@ -152,14 +206,36 @@ class FlagCXRegistrar:
         dst_paths = self._get_required_dst_files_paths()
         wrapper_src = src_paths["wrapper"]
         include_src = src_paths["include"]
+        if not wrapper_src.is_file():
+            raise FileNotFoundError(f"FlagCX Python wrapper not found: {wrapper_src}")
+        manifest = include_src / ".flagcx_device_headers"
+        headers = None
+        if self.require_header_manifest or manifest.is_file():
+            names = manifest.read_text().splitlines()
+            if not names or any(not name or Path(name).name != name or not name.endswith(".h") for name in names):
+                raise RuntimeError(f"Invalid or empty FlagCX header manifest: {manifest}")
+            headers = [include_src / name for name in names]
+            for header in headers:
+                if not header.is_file():
+                    raise FileNotFoundError(f"FlagCX consumer header not found: {header}")
         for wrapper_dst in dst_paths["wrapper"]:
+            wrapper_dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(wrapper_src, wrapper_dst)
             printinfo(f"flagcx_wrapper.py copied from {wrapper_src} to {wrapper_dst}")
         for include_dst in dst_paths["include"]:
             if include_dst.exists():
                 shutil.rmtree(include_dst)
-            shutil.copytree(include_src, include_dst)
+            if headers is None:
+                include_dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(include_src, include_dst)
+            else:
+                include_dst.mkdir(parents=True)
+                for header in headers:
+                    shutil.copy2(header, include_dst / header.name)
             printinfo(f"FlagCX headers copied from {include_src} to {include_dst}")
+
+    def _get_install_metadata(self):
+        return None
 
     def run(self):
         whl = self._get_flagcx_wheel_path()
@@ -168,6 +244,10 @@ class FlagCXRegistrar:
         else:
             self._compile_and_cache()
         self._copy_required_files()
+        metadata = self._get_install_metadata()
+        if metadata is not None:
+            path = self._get_runtime_path(self.bitcode_name).parent / "metadata.json"
+            path.write_text(json.dumps(metadata, indent=2) + "\n")
 
 
 def handle_flagcx(*args, **kwargs):

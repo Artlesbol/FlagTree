@@ -13,6 +13,7 @@ import functools
 import warnings
 import os
 from pathlib import Path
+from .distributed import Distributed, extern_libs_hash, link_flagcx
 
 
 def get_min_dot_size(target: GPUTarget):
@@ -126,11 +127,16 @@ class HIPOptions:
             extern_libs[lib] = str(default_libdir / f'{lib}.bc')
         # rocshmem_device_lib = str(default_libdir / 'librocshmem_device.bc')
 
+        if "flagcx" not in extern_libs:
+            extern_libs.update(Distributed().get_extern_libs(self.arch))
+
         object.__setattr__(self, 'extern_libs', tuple(extern_libs.items()))
         # object.__setattr__(self, 'rocshmem_device_lib', rocshmem_device_lib)
 
     def hash(self):
-        key = '_'.join([f'{name}-{val}' for name, val in self.__dict__.items()])
+        values = dict(self.__dict__)
+        values["extern_libs"] = extern_libs_hash(self.extern_libs)
+        key = '_'.join([f'{name}-{val}' for name, val in values.items()])
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
@@ -681,6 +687,7 @@ class HIPBackend(BaseBackend):
                 metadata['use_nvshmem'] = True
                 break
 
+        link_flagcx(llvm_mod, options.extern_libs, llvm, hcu)
         if knobs.compilation.enable_asan:
             default_libdir = Path(__file__).parent / 'lib'
             paths = [
@@ -690,7 +697,8 @@ class HIPBackend(BaseBackend):
             ]
             llvm.link_extern_libs(llvm_mod, paths)
         elif options.extern_libs:
-            paths = [path for (name, path) in options.extern_libs if hcu.need_extern_lib(llvm_mod, name)]
+            paths = [path for (name, path) in options.extern_libs
+                     if name != "flagcx" and hcu.need_extern_lib(llvm_mod, name)]
             if len(paths) > 0:
                 llvm.link_extern_libs(llvm_mod, paths)
 

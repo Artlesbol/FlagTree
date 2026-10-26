@@ -19,7 +19,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 from functools import cached_property, partial, update_wrapper
 from inspect import signature
 import json
@@ -39,6 +38,7 @@ def to_hashable(tensor):
 
 def _config_key(value):
     """Describe configuration values without object identity or pickle equality."""
+
     def encode(value):
         value_type = type(value)
         if value is None:
@@ -108,7 +108,8 @@ class AutoTuner:
             return self.config_space
         return [config for config in self.config_space if self.prune_fn(config, *args, **kwargs)]
 
-    def __call__(self, *args, autotune=True, autotune_allow_arg_overwrite=False, autotune_pg: torch.distributed.ProcessGroup | None = None, **kwargs):
+    def __call__(self, *args, autotune=True, autotune_allow_arg_overwrite=False,
+                 autotune_pg: torch.distributed.ProcessGroup | None = None, **kwargs):
         if autotune_pg is not None:
             return self._call_distributed(autotune_pg, autotune, *args, **kwargs)
 
@@ -173,7 +174,7 @@ class AutoTuner:
             if dist.get_backend(group) == "gloo":
                 device = "cpu"
             score = torch.empty(1, dtype=torch.float64, device=device)
-            selected = torch.full((1,), -1, dtype=torch.int64, device=device)
+            selected = torch.full((1, ), -1, dtype=torch.int64, device=device)
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
 

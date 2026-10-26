@@ -15,13 +15,12 @@ from typing import Tuple
 import unittest
 from unittest.mock import patch
 
-
 ROOT = Path(__file__).resolve().parents[3]
-ENV_KEYS = ("USE_FLAGCX", "USE_DIST", "USE_DISTRIBUTED", "USE_TLE_DIST", "USE_TLE_DISTRIBUTED",
-            "FLAGCX_MODULE_PATH", "FLAGCX_BITCODE_PATH", "FLAGCX_LIB_PATH", "FLAGCX_INCLUDE_PATH",
-            "DEVICE_HOME", "HIP_PATH", "DEVICE_BITCODE_ARCH", "FLAGCX_HCU_LLVM_BIN", "COMPILE_KERNEL",
-            "CCL_HOME", "JSON_INCLUDE_DIR", "MAX_JOBS", "FLAGCX_CACHE", "DIST_CACHE", "FLAGCX_RECOMPILE",
-            "DIST_RECOMPILE", "FLAGCX_SOURCE_DIR", "FLAGCX_ILUVATAR_ARCH")
+ENV_KEYS = ("USE_FLAGCX", "USE_DIST", "USE_DISTRIBUTED", "USE_TLE_DIST", "USE_TLE_DISTRIBUTED", "FLAGCX_MODULE_PATH",
+            "FLAGCX_BITCODE_PATH", "FLAGCX_LIB_PATH", "FLAGCX_INCLUDE_PATH", "DEVICE_HOME", "HIP_PATH",
+            "DEVICE_BITCODE_ARCH", "FLAGCX_HCU_LLVM_BIN", "COMPILE_KERNEL", "CCL_HOME", "JSON_INCLUDE_DIR", "MAX_JOBS",
+            "FLAGCX_CACHE", "DIST_CACHE", "FLAGCX_RECOMPILE", "DIST_RECOMPILE", "FLAGCX_SOURCE_DIR",
+            "FLAGCX_ILUVATAR_ARCH")
 
 
 def load_module(name, relative):
@@ -32,6 +31,7 @@ def load_module(name, relative):
 
 
 class HCUFlagCXTests(unittest.TestCase):
+
     def setUp(self):
         self.env = patch.dict(os.environ)
         self.env.start()
@@ -51,10 +51,13 @@ class HCUFlagCXTests(unittest.TestCase):
     def external(self, source, backend="hcu"):
         cache = self.root / "cache"
         return {
-            "backend": SimpleNamespace(dst_path=str(source)),
-            "configs": SimpleNamespace(flagtree_root_dir=str(self.root / "project"), flagtree_backend=backend),
-            "cache": SimpleNamespace(dir_path=str(cache), _create_subdir=lambda subdir_name: (
-                cache / subdir_name).mkdir(parents=True, exist_ok=True)),
+            "backend":
+            SimpleNamespace(dst_path=str(source)),
+            "configs":
+            SimpleNamespace(flagtree_root_dir=str(self.root / "project"), flagtree_backend=backend),
+            "cache":
+            SimpleNamespace(dir_path=str(cache), _create_subdir=lambda subdir_name:
+                            (cache / subdir_name).mkdir(parents=True, exist_ok=True)),
         }
 
     def bundle(self):
@@ -119,9 +122,10 @@ class HCUFlagCXTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(lib.encode())
         source = ast.parse((ROOT / "third_party/hcu/backend/compiler_hcu.py").read_text())
-        options_class = next(node for node in source.body if isinstance(node, ast.ClassDef) and node.name == "HIPOptions")
-        scope = dict(dataclass=dataclass, Tuple=Tuple, Path=Path, hashlib=hashlib,
-                     Distributed=self.runtime.Distributed, extern_libs_hash=self.runtime.extern_libs_hash,
+        options_class = next(node for node in source.body
+                             if isinstance(node, ast.ClassDef) and node.name == "HIPOptions")
+        scope = dict(dataclass=dataclass, Tuple=Tuple, Path=Path, hashlib=hashlib, Distributed=self.runtime.Distributed,
+                     extern_libs_hash=self.runtime.extern_libs_hash,
                      HIPBackend=SimpleNamespace(path_to_rocm=lambda: str(sdk)))
         exec(compile(ast.Module(body=[options_class], type_ignores=[]), "HIPOptions", "exec"), scope)
         options = scope["HIPOptions"](arch="gfx936")
@@ -134,13 +138,14 @@ class HCUFlagCXTests(unittest.TestCase):
         tool = self.root / "aillvm/bin/amdgpu-arch"
         tool.parent.mkdir(parents=True)
         tool.touch()
-        with patch.object(self.build.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "gfx936\ngfx936\n")):
+        with patch.object(self.build.subprocess, "run", return_value=subprocess.CompletedProcess([], 0,
+                                                                                                 "gfx936\ngfx936\n")):
             self.assertEqual(self.build._device_arch(self.root), "gfx936")
 
     def test_select_llvm_tools_matching_hipcc(self):
         sdk = self.root / "sdk"
-        for tool in ("bin/hipcc", "llvm/bin/opt", "llvm/bin/llvm-as", "llvm/bin/llvm-dis",
-                     "aillvm/bin/opt", "aillvm/bin/llvm-as", "aillvm/bin/llvm-dis"):
+        for tool in ("bin/hipcc", "llvm/bin/opt", "llvm/bin/llvm-as", "llvm/bin/llvm-dis", "aillvm/bin/opt",
+                     "aillvm/bin/llvm-as", "aillvm/bin/llvm-dis"):
             path = sdk / tool
             path.parent.mkdir(parents=True, exist_ok=True)
             path.touch()

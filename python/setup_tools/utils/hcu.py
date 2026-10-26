@@ -25,7 +25,6 @@ import subprocess
 
 from python.setup_tools.utils.default import FlagCXRegistrar, configure_flagcx_source
 
-
 # PR #667 provides the DU Device API bitcode build. Keep this pin specific to
 # HCU: the other backends still use their existing FlagCX revisions.
 FLAGCX_HCU_URL = "https://github.com/MC952-arch/FlagCX.git"
@@ -69,6 +68,7 @@ def _toolchain():
     sdk = Path(os.environ.get("DEVICE_HOME") or os.environ.get("HIP_PATH") or "/opt/dtk").expanduser().resolve()
     if not (sdk / "bin/hipcc").is_file():
         raise RuntimeError(f"HCU FlagCX requires {sdk / 'bin/hipcc'}. Set DEVICE_HOME to the DTK installation.")
+
     def llvm_major(executable):
         output = subprocess.check_output([str(executable), "--version"], text=True, stderr=subprocess.STDOUT)
         match = re.search(r"(?:clang|LLVM) version\s+(\d+)", output)
@@ -108,9 +108,16 @@ class HCUFlagCXRegistrar(FlagCXRegistrar):
         self.cache_lib_dir = self.cache_root_dir / "hcu" / self.arch
         self._set_library_paths()
         cmd = [
-            "make", "-j", os.environ.get("MAX_JOBS", "8"), "USE_DU=1", "COMPILE_KERNEL=1",
-            f"DEVICE_HOME={sdk}", f"CCL_HOME={os.environ.get('CCL_HOME') or sdk}",
-            f"DEVICE_BITCODE_ARCH={self.arch}", f"DTK_LLVM_BIN={llvm_bin}", f"BUILDDIR={build_dir}",
+            "make",
+            "-j",
+            os.environ.get("MAX_JOBS", "8"),
+            "USE_DU=1",
+            "COMPILE_KERNEL=1",
+            f"DEVICE_HOME={sdk}",
+            f"CCL_HOME={os.environ.get('CCL_HOME') or sdk}",
+            f"DEVICE_BITCODE_ARCH={self.arch}",
+            f"DTK_LLVM_BIN={llvm_bin}",
+            f"BUILDDIR={build_dir}",
             f"JSON_INCLUDE_DIR={json_dir}",
         ]
         for key in ("HOST_COMPILER", "USE_UCX", "UCX_HOME", "USE_IBUC", "USE_MPI", "MPI_HOME"):
@@ -125,7 +132,7 @@ class HCUFlagCXRegistrar(FlagCXRegistrar):
 
     def _get_required_dst_files_paths(self):
         paths = super()._get_required_dst_files_paths()
-        paths["include"] += (self._get_runtime_path(self.bitcode_name).parent / "include",)
+        paths["include"] += (self._get_runtime_path(self.bitcode_name).parent / "include", )
         return paths
 
     def _get_install_metadata(self):

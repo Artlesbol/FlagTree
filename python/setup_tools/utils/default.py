@@ -164,7 +164,8 @@ class FlagCXRegistrar:
         source = Path(self.flagcx_src_dir)
         override = os.environ.get("JSON_INCLUDE_DIR")
         candidates = [Path(override).expanduser()] if override else [
-            source / "third-party/json/single_include", Path("/usr/include"),
+            source / "third-party/json/single_include",
+            Path("/usr/include"),
         ]
         for candidate in candidates:
             if (candidate / "nlohmann/json.hpp").is_file():

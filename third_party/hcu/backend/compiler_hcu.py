@@ -697,8 +697,10 @@ class HIPBackend(BaseBackend):
             ]
             llvm.link_extern_libs(llvm_mod, paths)
         elif options.extern_libs:
-            paths = [path for (name, path) in options.extern_libs
-                     if name != "flagcx" and hcu.need_extern_lib(llvm_mod, name)]
+            paths = [
+                path for (name, path) in options.extern_libs
+                if name != "flagcx" and hcu.need_extern_lib(llvm_mod, name)
+            ]
             if len(paths) > 0:
                 llvm.link_extern_libs(llvm_mod, paths)
 

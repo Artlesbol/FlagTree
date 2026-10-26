@@ -57,6 +57,7 @@ flagcx_rt_conf = FlagcxRuntimeConfig()
 
 
 class Distributed:
+
     def get_extern_libs(self, arch=None):
         config = flagcx_rt_conf
         if not config.enabled or not config.bitcode_path:

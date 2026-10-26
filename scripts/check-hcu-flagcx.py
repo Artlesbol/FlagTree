@@ -16,8 +16,10 @@ def check_device_library(output, BC: tl.constexpr):
     # flagcxChar == 0; its size is one byte. This function is independent of
     # communicators, so linking can be checked before setting up multiple ranks.
     size = tl.extern_elementwise(
-        lib_name="flagcx", lib_path=BC, args=[tl.full((), 0, tl.int32)],
-        arg_type_symbol_dict={(tl.int32,): ("flagcxDataTypeSizeDevice", tl.uint64)},
+        lib_name="flagcx",
+        lib_path=BC,
+        args=[tl.full((), 0, tl.int32)],
+        arg_type_symbol_dict={(tl.int32, ): ("flagcxDataTypeSizeDevice", tl.uint64)},
         is_pure=True,
     )
     tl.store(output, size.to(tl.int64))
@@ -45,7 +47,7 @@ def main():
     # Force a compile to exercise the linker even if this check was run before.
     with triton.knobs.compilation.scope():
         triton.knobs.compilation.always_compile = True
-        check_device_library[(1,)](output, BC=extern_libs["flagcx"], num_warps=1)
+        check_device_library[(1, )](output, BC=extern_libs["flagcx"], num_warps=1)
     torch.cuda.synchronize()
     if output.item() != 1:
         raise RuntimeError(f"FlagCX device-library call returned {output.item()}, expected 1")

@@ -346,8 +346,8 @@ class HCUFlagCXTests(unittest.TestCase):
         self.runtime.__file__ = str(wheel / "backends/hcu/distributed.py")
         self.assertTrue(self.runtime.FlagcxRuntimeConfig().is_available)
 
-    def test_common_wrapper_supports_legacy_and_new_source_layouts(self):
-        registrar = self.common.FlagCXRegistrar(self.external(self.root / "source", "nvidia"))
+    def test_hcu_wrapper_supports_legacy_and_new_source_layouts(self):
+        registrar = self.build.HCUFlagCXRegistrar(self.external(self.root / "source"))
         source = Path(registrar.flagcx_src_dir)
         legacy = source / "plugin/interservice/flagcx_wrapper.py"
         modern = source / "src/flagcx/api.py"
@@ -359,28 +359,61 @@ class HCUFlagCXTests(unittest.TestCase):
             legacy.unlink()
             self.assertEqual(registrar._get_required_src_files_paths()["wrapper"], modern)
 
-    def test_common_grouped_build_rejects_partial_cache_and_runs_once(self):
-        registrar = self.common.FlagCXRegistrar(self.external(self.root / "source", "nvidia"))
+    def test_hcu_build_ignores_partial_common_cache_and_runs_once(self):
+        registrar = self.build.HCUFlagCXRegistrar(self.external(self.root / "source"))
+        registrar.arch = "gfx936"
+        registrar.src_lib_dir = Path(registrar.flagcx_src_dir) / "build/hcu/gfx936/lib"
         registrar.src_lib_dir.mkdir(parents=True)
-        registrar.libflagcx_cache_path.write_bytes(b"stale host-only cache")
+        cache = self.root / "cache/flagcx"
+        cache.mkdir(parents=True)
+        (cache / registrar.shared_lib_name).write_bytes(b"stale host-only cache")
         cmd = ["make", "device_bitcode"]
         calls = []
 
         def build(command, **kwargs):
             calls.append(command)
-            registrar.libflagcx_src_path.write_bytes(b"new host")
-            registrar.libflagcx_device_src_path.write_bytes(b"new bitcode")
+            (registrar.src_lib_dir / registrar.shared_lib_name).write_bytes(b"new host")
+            (registrar.src_lib_dir / registrar.bitcode_name).write_bytes(b"new bitcode")
 
         with patch.object(registrar, "get_compile_cmds", return_value={registrar.shared_lib_name: cmd,
                                                                       registrar.bitcode_name: cmd}), \
-             patch.object(self.common.subprocess, "run", side_effect=build):
+             patch.object(self.build.subprocess, "run", side_effect=build):
             registrar._compile_and_cache()
         self.assertEqual(calls, [cmd])
         self.assertEqual(registrar._get_runtime_path(registrar.shared_lib_name).read_bytes(), b"new host")
         self.assertEqual(registrar._get_runtime_path(registrar.bitcode_name).read_bytes(), b"new bitcode")
+        self.assertEqual((cache / registrar.shared_lib_name).read_bytes(), b"stale host-only cache")
+        self.assertFalse((cache / registrar.bitcode_name).exists())
+
+    def test_hcu_header_manifest_validated_before_installation(self):
+        registrar = self.build.HCUFlagCXRegistrar(self.external(self.root / "source"))
+        wrapper = Path(registrar.flagcx_src_dir) / "src/flagcx/api.py"
+        wrapper.parent.mkdir(parents=True)
+        wrapper.write_text("# wrapper\n")
+        include = registrar.src_lib_dir.parent / "include"
+        include.mkdir(parents=True)
+        manifest = include / ".flagcx_device_headers"
+        with patch.object(registrar, "_get_flagcx_wheel_path", return_value=None):
+            for content, error in ((None, FileNotFoundError), ("", RuntimeError), ("../flagcx.h\n", RuntimeError),
+                                   ("missing.h\n", FileNotFoundError)):
+                with self.subTest(manifest=content):
+                    if content is not None:
+                        manifest.write_text(content)
+                    with self.assertRaises(error):
+                        registrar._copy_required_files()
+                    self.assertFalse((self.root / "project").exists())
+            manifest.write_text("flagcx.h\n")
+            (include / "flagcx.h").write_text("// exported header\n")
+            (include / "internal.h").write_text("// not exported\n")
+            registrar._copy_required_files()
+        installed = self.root / "project/python/triton/experimental/tle/language/include"
+        self.assertEqual([path.name for path in installed.iterdir()], ["flagcx.h"])
+        self.assertFalse((self.root / "project/third_party/nvidia").exists())
 
     def test_existing_cache_decision_is_preserved(self):
         registrar = self.common.FlagCXRegistrar(self.external(self.root / "source", "nvidia"))
+        for name in (registrar.shared_lib_name, registrar.bitcode_name):
+            registrar._get_runtime_path(name).parent.mkdir(parents=True, exist_ok=True)
         registrar.src_lib_dir.mkdir(parents=True)
         for name in (registrar.shared_lib_name, registrar.bitcode_name):
             getattr(registrar, f"{name.split('.')[0]}_cache_path").write_bytes(b"cached")
@@ -395,6 +428,8 @@ class HCUFlagCXTests(unittest.TestCase):
 
     def test_common_complete_cache_avoids_build(self):
         registrar = self.common.FlagCXRegistrar(self.external(self.root / "source", "nvidia"))
+        for name in (registrar.shared_lib_name, registrar.bitcode_name):
+            registrar._get_runtime_path(name).parent.mkdir(parents=True, exist_ok=True)
         for name in (registrar.shared_lib_name, registrar.bitcode_name):
             getattr(registrar, f"{name.split('.')[0]}_cache_path").write_bytes(b"cached")
         with patch.object(self.common.subprocess, "run") as build:
@@ -423,6 +458,8 @@ class HCUFlagCXTests(unittest.TestCase):
         for relative in ("python/triton/experimental/tle/language", "third_party/iluvatar/backend"):
             (self.root / "project" / relative).mkdir(parents=True)
         registrar = scope["IluvatarFlagCXRegistrar"](self.external(source, "iluvatar"))
+        for name in (registrar.shared_lib_name, registrar.bitcode_name):
+            registrar._get_runtime_path(name).parent.mkdir(parents=True, exist_ok=True)
         calls = []
 
         def build(command, **kwargs):

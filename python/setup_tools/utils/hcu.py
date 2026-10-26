@@ -22,9 +22,10 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 
-from python.setup_tools.utils.default import FlagCXRegistrar
+from python.setup_tools.utils.default import FlagCXRegistrar, printinfo
 
 # PR #667 provides the DU Device API bitcode build. Keep this pin specific to
 # HCU: the other backends still use their existing FlagCX revisions.
@@ -109,12 +110,14 @@ def _toolchain():
 
 
 class HCUFlagCXRegistrar(FlagCXRegistrar):
-    """Supply DTK build parameters while using the shared installation layout."""
+    """HCU-specific FlagCX build and installation using the shared runtime layout."""
 
-    # The make target tracks incremental builds; do not keep a second copy of
-    # artifacts in a cache that cannot identify the DTK/build configuration.
-    cache_build = False
-    require_header_manifest = True
+    def _set_path(self, external):
+        # HCU uses make's incremental build tree, not the common artifact cache.
+        self.backend_name = external["configs"].flagtree_backend or "hcu"
+        self.flagcx_src_dir = external["backend"].dst_path
+        self.flagtree_dir = external["configs"].flagtree_root_dir
+        self.src_lib_dir = Path(self.flagcx_src_dir) / "build/lib"
 
     def _json_include_dir(self):
         """Find the header-only JSON dependency, initializing it if necessary."""
@@ -149,7 +152,6 @@ class HCUFlagCXRegistrar(FlagCXRegistrar):
         json_dir = self._json_include_dir()
         build_dir = source / "build/hcu" / self.arch
         self.src_lib_dir = build_dir / "lib"
-        self._set_library_paths()
         cmd = [
             "make",
             "-j",
@@ -167,14 +169,71 @@ class HCUFlagCXRegistrar(FlagCXRegistrar):
             if os.environ.get(key):
                 cmd.append(f"{key}={os.environ[key]}")
         cmd.append("device_bitcode")
-        # The common registrar groups equal commands and runs this target once.
+        # Both artifacts are built together; the HCU build hook runs this target once.
         return {self.shared_lib_name: cmd, self.bitcode_name: cmd}
 
     def _compile_and_cache(self):
-        super()._compile_and_cache()
+        # Always invoke make so DTK/build changes are checked without reusing
+        # the common cache, which does not identify the HCU configuration.
+        cmds = self.get_compile_cmds()
+        for cmd in dict.fromkeys(tuple(cmd) for cmd in cmds.values()):
+            printinfo(f"Compiling HCU FlagCX in {self.flagcx_src_dir}")
+            subprocess.run(list(cmd), cwd=self.flagcx_src_dir, check=True)
+        for name in cmds:
+            source = self.src_lib_dir / name
+            if not source.is_file():
+                raise FileNotFoundError(f"Expected FlagCX build artifact not found: {source}")
+        for name in cmds:
+            destination = self._get_runtime_path(name)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.src_lib_dir / name, destination)
         metadata = {"backend": self.backend_name, "arch": self.arch}
         path = self._get_runtime_path(self.bitcode_name).parent / "metadata.json"
         path.write_text(json.dumps(metadata, indent=2) + "\n")
+
+    def _get_required_src_files_paths(self):
+        whl_path = self._get_flagcx_wheel_path()
+        if whl_path is None:
+            source = Path(self.flagcx_src_dir)
+            wrappers = (source / "plugin/interservice/flagcx_wrapper.py", source / "src/flagcx/api.py")
+            wrapper = next((path for path in wrappers if path.is_file()), wrappers[0])
+            return {"wrapper": wrapper, "include": self.src_lib_dir.parent / "include"}
+        return {"wrapper": whl_path / "api.py", "include": whl_path / "include"}
+
+    def _get_required_dst_files_paths(self):
+        return {
+            "wrapper":
+            (Path(self.flagtree_dir) / "python" / "triton" / "experimental" / "tle" / "language" / "flagcx_wrapper.py",
+             Path(self.flagtree_dir) / "third_party" / self.backend_name / "backend" / "flagcx_wrapper.py"), "include":
+            (Path(self.flagtree_dir) / "python" / "triton" / "experimental" / "tle" / "language" / "include", )
+        }
+
+    def _copy_required_files(self):
+        src_paths = self._get_required_src_files_paths()
+        dst_paths = self._get_required_dst_files_paths()
+        wrapper_src = src_paths["wrapper"]
+        include_src = src_paths["include"]
+        if not wrapper_src.is_file():
+            raise FileNotFoundError(f"FlagCX Python wrapper not found: {wrapper_src}")
+        manifest = include_src / ".flagcx_device_headers"
+        names = manifest.read_text().splitlines()
+        if not names or any(not name or Path(name).name != name or not name.endswith(".h") for name in names):
+            raise RuntimeError(f"Invalid or empty FlagCX header manifest: {manifest}")
+        headers = [include_src / name for name in names]
+        for header in headers:
+            if not header.is_file():
+                raise FileNotFoundError(f"FlagCX consumer header not found: {header}")
+        for wrapper_dst in dst_paths["wrapper"]:
+            wrapper_dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(wrapper_src, wrapper_dst)
+            printinfo(f"flagcx_wrapper.py copied from {wrapper_src} to {wrapper_dst}")
+        for include_dst in dst_paths["include"]:
+            if include_dst.exists():
+                shutil.rmtree(include_dst)
+            include_dst.mkdir(parents=True)
+            for header in headers:
+                shutil.copy2(header, include_dst / header.name)
+            printinfo(f"FlagCX headers copied from {include_src} to {include_dst}")
 
 
 def handle_flagcx(*args, **kwargs):

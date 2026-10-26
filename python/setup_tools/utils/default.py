@@ -34,9 +34,6 @@ def printinfo(msgs):
 
 class FlagCXRegistrar:
 
-    cache_build = True
-    require_header_manifest = False
-
     def __init__(self, external):
         self.bitcode_name = "libflagcx_device.bc"
         self.shared_lib_name = "libflagcx.so"
@@ -82,12 +79,7 @@ class FlagCXRegistrar:
         self.flagtree_dir = flagtree_config.flagtree_root_dir
         self.src_lib_dir = Path(self.flagcx_src_dir) / "build" / "lib"
         self.cache_lib_dir = Path(flagtree_cache.dir_path) / "flagcx"
-        if self.cache_build:
-            flagtree_cache._create_subdir(subdir_name="flagcx")
-        self._set_library_paths()
-
-    def _set_library_paths(self):
-        """Refresh artifact paths after a backend selects its build/cache tree."""
+        flagtree_cache._create_subdir(subdir_name="flagcx")
         for lib_name in (self.bitcode_name, self.shared_lib_name):
             src_path = self.src_lib_dir / lib_name
             cache_path = self.cache_lib_dir / lib_name
@@ -110,58 +102,48 @@ class FlagCXRegistrar:
 
     def _compile_and_cache(self):
         cmds = self.get_compile_cmds()
-        # Preserve the existing cache policy for backends that use it. Without
-        # a cache, always invoke make and let the build system track changes.
-        reuse_cache = self.cache_build and not self._is_cache_available()
-        rebuild = not self.cache_build or self._is_flagcx_recompile_required()
-        # Backends may associate both outputs with one unified make target.
-        # Treat them as a group, so the command runs once and partial caches
-        # cannot mix host/device artifacts from different builds.
-        groups = {}
+        is_unused_cache = self._is_cache_available()
+        is_recompile = self._is_flagcx_recompile_required()
+        is_unused_cache = is_unused_cache or is_recompile
+
         for lib_name, cmd in cmds.items():
-            groups.setdefault(tuple(cmd), []).append(lib_name)
-        for cmd, names in groups.items():
-            sources = [getattr(self, f"{name.split('.')[0]}_src_path") for name in names]
-            cached = [getattr(self, f"{name.split('.')[0]}_cache_path") for name in names]
-            use_cached = not rebuild and reuse_cache and all(path.is_file() for path in cached)
-            if use_cached:
-                artifacts = cached
+            cache_path = getattr(self, f"{lib_name.split('.')[0]}_cache_path")
+            src_path = getattr(self, f"{lib_name.split('.')[0]}_src_path")
+            runtime_path = self._get_runtime_path(lib_name)
+            if cache_path.exists() and not is_unused_cache:
+                printinfo(f"{lib_name} already exists in cache, skipping compilation ...")
+                shutil.copy(cache_path, runtime_path)
+            elif src_path.exists() and not is_recompile:
+                printinfo(f"{lib_name} already exists in build directory, copying to cache...")
+                shutil.copy(src_path, cache_path)
+                shutil.copy(src_path, runtime_path)
+                printinfo(f"{lib_name} copied from {src_path} to cache at {cache_path}")
+                printinfo(f"{lib_name} copied from {src_path} to cache at {runtime_path}")
             else:
-                if rebuild or not all(path.is_file() for path in sources):
-                    printinfo(f"Compiling {', '.join(names)} in {self.flagcx_src_dir}")
-                    subprocess.run(list(cmd), cwd=self.flagcx_src_dir, check=True)
-                artifacts = sources
-            for path in artifacts:
-                if not path.is_file():
-                    raise FileNotFoundError(f"Expected FlagCX build artifact not found: {path}")
-            if self.cache_build:
-                self.cache_lib_dir.mkdir(parents=True, exist_ok=True)
-            for name, artifact, cache_path in zip(names, artifacts, cached):
-                runtime_path = self._get_runtime_path(name)
-                runtime_path.parent.mkdir(parents=True, exist_ok=True)
-                if self.cache_build and not use_cached:
-                    shutil.copy2(artifact, cache_path)
-                shutil.copy2(artifact, runtime_path)
+                printinfo(f"Compiling {lib_name} in {self.flagcx_src_dir}...")
+                subprocess.run(cmd, cwd=self.flagcx_src_dir, check=True)
+                if not src_path.exists():
+                    raise FileNotFoundError(f"Expected {lib_name} not found: {src_path}")
+                printinfo(f"{lib_name} compilation completed.")
+                shutil.copy(src_path, cache_path)
+                shutil.copy(src_path, runtime_path)
+                printinfo(f"{lib_name} copied from {src_path} to cache at {cache_path}")
+                printinfo(f"{lib_name} copied from {src_path} to cache at {runtime_path}")
 
     def _get_required_src_files_paths(self):
         whl_path = self._get_flagcx_wheel_path()
         if whl_path is None:
-            source = Path(self.flagcx_src_dir)
-            wrappers = (source / "plugin/interservice/flagcx_wrapper.py", source / "src/flagcx/api.py")
-            wrapper = next((path for path in wrappers if path.is_file()), wrappers[0])
-            exported = self.src_lib_dir.parent / "include"
-            if self.require_header_manifest or (exported / ".flagcx_device_headers").is_file():
-                include = exported
-            else:
-                include = source / "flagcx/include"
-            return {"wrapper": wrapper, "include": include}
+            return {
+                "wrapper": Path(self.flagcx_src_dir) / "plugin" / "interservice" / "flagcx_wrapper.py", "include":
+                Path(self.flagcx_src_dir) / "flagcx" / "include"
+            }
         return {"wrapper": whl_path / "api.py", "include": whl_path / "include"}
 
     def _get_required_dst_files_paths(self):
         return {
             "wrapper":
             (Path(self.flagtree_dir) / "python" / "triton" / "experimental" / "tle" / "language" / "flagcx_wrapper.py",
-             Path(self.flagtree_dir) / "third_party" / self.backend_name / "backend" / "flagcx_wrapper.py"), "include":
+             Path(self.flagtree_dir) / "third_party" / "nvidia" / "backend" / "flagcx_wrapper.py"), "include":
             (Path(self.flagtree_dir) / "python" / "triton" / "experimental" / "tle" / "language" / "include", )
         }
 
@@ -170,32 +152,13 @@ class FlagCXRegistrar:
         dst_paths = self._get_required_dst_files_paths()
         wrapper_src = src_paths["wrapper"]
         include_src = src_paths["include"]
-        if not wrapper_src.is_file():
-            raise FileNotFoundError(f"FlagCX Python wrapper not found: {wrapper_src}")
-        manifest = include_src / ".flagcx_device_headers"
-        headers = None
-        if self.require_header_manifest or manifest.is_file():
-            names = manifest.read_text().splitlines()
-            if not names or any(not name or Path(name).name != name or not name.endswith(".h") for name in names):
-                raise RuntimeError(f"Invalid or empty FlagCX header manifest: {manifest}")
-            headers = [include_src / name for name in names]
-            for header in headers:
-                if not header.is_file():
-                    raise FileNotFoundError(f"FlagCX consumer header not found: {header}")
         for wrapper_dst in dst_paths["wrapper"]:
-            wrapper_dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(wrapper_src, wrapper_dst)
             printinfo(f"flagcx_wrapper.py copied from {wrapper_src} to {wrapper_dst}")
         for include_dst in dst_paths["include"]:
             if include_dst.exists():
                 shutil.rmtree(include_dst)
-            if headers is None:
-                include_dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(include_src, include_dst)
-            else:
-                include_dst.mkdir(parents=True)
-                for header in headers:
-                    shutil.copy2(header, include_dst / header.name)
+            shutil.copytree(include_src, include_dst)
             printinfo(f"FlagCX headers copied from {include_src} to {include_dst}")
 
     def run(self):

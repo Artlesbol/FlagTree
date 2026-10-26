@@ -223,18 +223,38 @@ def write_json(path: Path, payload: Dict) -> bool:
 # Record building
 # ============================================================================
 
+SHORT_SHA_LEN = 12
+
 
 def build_record_id() -> str:
-    """Stable dedup key for one attempt of one backend's run.
+    """Dedup key identifying what was measured, not which CI run measured it.
 
-    run_attempt is part of the key on purpose: the auto-rerun watchdog reruns
-    failed jobs, and "failed then passed" is two rows worth keeping.
+    Reporting updates the row whose key matches, so the key decides what
+    collapses into one row:
+
+      pr-<number>-<backend>            a PR keeps only its latest result,
+                                       since earlier commits in a PR are
+                                       usually work in progress
+      baseline-<short sha>-<backend>   one row per main commit, which is the
+                                       series worth analysing
+
+    Reruns therefore overwrite rather than add a row. The run that produced
+    the current values stays visible through run_id/run_attempt/run_url, and
+    the superseded attempts remain in the ledger.
+
+    Falls back to the run id when neither a PR number nor a commit is known,
+    so a manual invocation still produces something unique.
     """
-    parts = [ctx("RUN_ID") or "local", str(ctx_int("RUN_ATTEMPT") or 1)]
-    backend = ctx("BACKEND")
-    if backend:
-        parts.append(backend)
-    return "-".join(parts)
+    backend = ctx("BACKEND") or "unknown"
+    kind = ctx("KIND", "test")
+    pr_number = ctx_int("PR_NUMBER")
+    sha = ctx("FLAGTREE_SHA")
+
+    if kind == "test" and pr_number:
+        return f"pr-{pr_number}-{backend}"
+    if sha:
+        return f"{kind}-{sha[:SHORT_SHA_LEN]}-{backend}"
+    return f"{ctx('RUN_ID') or 'local'}-{ctx_int('RUN_ATTEMPT') or 1}-{backend}"
 
 
 def job_status(compare: Optional[Dict]) -> str:

@@ -40,7 +40,7 @@ concurrency:
 jobs:
   tsingmicro36x:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false }}
-    uses: flagos-ai/FlagTree/.github/workflows/template-gems-test.yml@main
+    uses: ./.github/workflows/template-gems-test.yml
     with:
       runner: tsingmicro3.6
       backend: tsingmicro
@@ -69,5 +69,4 @@ jobs:
         export PYTHONPATH=${LLVM_SYSPATH}/python_packages/mlir_core:$PYTHONPATH
         export LD_LIBRARY_PATH=$TX8_DEPS_ROOT/lib:$LD_LIBRARY_PATH
         export PATH=${LLVM_BINARY_DIR}:${PATH}
-    secrets:
-      github-token: ${{ secrets.GITHUB_TOKEN }}
+    secrets: inherit

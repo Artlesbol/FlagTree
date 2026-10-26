@@ -50,5 +50,4 @@ jobs:
         set -x
         export FLAGTREE_BACKEND=metax
         MAX_JOBS=32 python3 -m pip install . --no-build-isolation -v
-    secrets:
-      github-token: ${{ secrets.GITHUB_TOKEN }}
+    secrets: inherit

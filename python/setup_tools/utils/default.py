@@ -19,7 +19,6 @@
 # SOFTWARE.
 
 import subprocess
-import json
 import os
 from pathlib import Path
 import shutil
@@ -33,25 +32,9 @@ def printinfo(msgs):
     print(f" [TLE-DIST-INFO]: {msgs}.")
 
 
-def configure_flagcx_source(relative_path, *, url=None, commit_id=None, source_dir=None):
-    """Select a backend's source location without changing another backend's pin."""
-    from python.setup_tools.utils import flagtree_submodules
-    from python.setup_tools.utils.tools import flagtree_configs
-
-    dependency = flagtree_submodules.get("flagcx")
-    if dependency is None:
-        return
-    if url is not None:
-        dependency.url = url
-    if commit_id is not None:
-        dependency.commit_id = commit_id
-    dependency.dst_path = str(Path(source_dir).expanduser().resolve()) if source_dir else str(
-        Path(flagtree_configs.flagtree_submodule_dir) / relative_path)
-
-
 class FlagCXRegistrar:
 
-    always_rebuild = False
+    cache_build = True
     require_header_manifest = False
 
     def __init__(self, external):
@@ -98,9 +81,9 @@ class FlagCXRegistrar:
         self.flagcx_src_dir = submodule.dst_path
         self.flagtree_dir = flagtree_config.flagtree_root_dir
         self.src_lib_dir = Path(self.flagcx_src_dir) / "build" / "lib"
-        self.cache_root_dir = Path(flagtree_cache.dir_path) / "flagcx"
-        self.cache_lib_dir = self.cache_root_dir
-        flagtree_cache._create_subdir(subdir_name="flagcx")
+        self.cache_lib_dir = Path(flagtree_cache.dir_path) / "flagcx"
+        if self.cache_build:
+            flagtree_cache._create_subdir(subdir_name="flagcx")
         self._set_library_paths()
 
     def _set_library_paths(self):
@@ -127,10 +110,10 @@ class FlagCXRegistrar:
 
     def _compile_and_cache(self):
         cmds = self.get_compile_cmds()
-        # Preserve the existing registrar's cache decision convention. HCU's
-        # always_rebuild policy independently disables reuse of cached outputs.
-        reuse_cache = not self._is_cache_available()
-        rebuild = self.always_rebuild or self._is_flagcx_recompile_required()
+        # Preserve the existing cache policy for backends that use it. Without
+        # a cache, always invoke make and let the build system track changes.
+        reuse_cache = self.cache_build and not self._is_cache_available()
+        rebuild = not self.cache_build or self._is_flagcx_recompile_required()
         # Backends may associate both outputs with one unified make target.
         # Treat them as a group, so the command runs once and partial caches
         # cannot mix host/device artifacts from different builds.
@@ -151,34 +134,14 @@ class FlagCXRegistrar:
             for path in artifacts:
                 if not path.is_file():
                     raise FileNotFoundError(f"Expected FlagCX build artifact not found: {path}")
-            self.cache_lib_dir.mkdir(parents=True, exist_ok=True)
+            if self.cache_build:
+                self.cache_lib_dir.mkdir(parents=True, exist_ok=True)
             for name, artifact, cache_path in zip(names, artifacts, cached):
                 runtime_path = self._get_runtime_path(name)
                 runtime_path.parent.mkdir(parents=True, exist_ok=True)
-                if not use_cached:
+                if self.cache_build and not use_cached:
                     shutil.copy2(artifact, cache_path)
                 shutil.copy2(artifact, runtime_path)
-
-    def _json_include_dir(self):
-        """Find the header-only JSON dependency, initializing it if necessary."""
-        source = Path(self.flagcx_src_dir)
-        override = os.environ.get("JSON_INCLUDE_DIR")
-        candidates = [Path(override).expanduser()] if override else [
-            source / "third-party/json/single_include",
-            Path("/usr/include"),
-        ]
-        for candidate in candidates:
-            if (candidate / "nlohmann/json.hpp").is_file():
-                return candidate.resolve()
-        if override:
-            raise RuntimeError(f"nlohmann/json.hpp is missing under JSON_INCLUDE_DIR={override}")
-        if (source / ".git").exists():
-            subprocess.run(["git", "submodule", "update", "--init", "--", "third-party/json"], cwd=source, check=True)
-        candidate = source / "third-party/json/single_include"
-        if not (candidate / "nlohmann/json.hpp").is_file():
-            raise RuntimeError("FlagCX needs nlohmann/json.hpp. Install nlohmann-json3-dev, initialize "
-                               "FlagCX's third-party/json submodule, or set JSON_INCLUDE_DIR.")
-        return candidate.resolve()
 
     def _get_required_src_files_paths(self):
         whl_path = self._get_flagcx_wheel_path()
@@ -235,9 +198,6 @@ class FlagCXRegistrar:
                     shutil.copy2(header, include_dst / header.name)
             printinfo(f"FlagCX headers copied from {include_src} to {include_dst}")
 
-    def _get_install_metadata(self):
-        return None
-
     def run(self):
         whl = self._get_flagcx_wheel_path()
         if whl is not None:
@@ -245,10 +205,6 @@ class FlagCXRegistrar:
         else:
             self._compile_and_cache()
         self._copy_required_files()
-        metadata = self._get_install_metadata()
-        if metadata is not None:
-            path = self._get_runtime_path(self.bitcode_name).parent / "metadata.json"
-            path.write_text(json.dumps(metadata, indent=2) + "\n")
 
 
 def handle_flagcx(*args, **kwargs):

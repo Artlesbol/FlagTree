@@ -39,8 +39,8 @@ def main():
 
     target = driver.active.get_current_target()
     if not flagcx_rt_conf.is_available:
-        raise RuntimeError("The HCU FlagCX bundle is missing. Rebuild FlagTree with USE_FLAGCX=ON.")
-    extern_libs = Distributed().get_extern_libs(target.arch)
+        raise RuntimeError("The HCU FlagCX libraries or headers are missing. Rebuild FlagTree with USE_FLAGCX=ON.")
+    extern_libs = Distributed().get_extern_libs()
     host = ctypes.CDLL(str(flagcx_rt_conf.shared_lib_path), mode=os.RTLD_NOW)
     host.flagcxGetVersion.argtypes = [ctypes.POINTER(ctypes.c_int)]
     host.flagcxGetVersion.restype = ctypes.c_int

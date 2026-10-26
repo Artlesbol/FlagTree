@@ -128,7 +128,7 @@ class HIPOptions:
         # rocshmem_device_lib = str(default_libdir / 'librocshmem_device.bc')
 
         if "flagcx" not in extern_libs:
-            extern_libs.update(Distributed().get_extern_libs(self.arch))
+            extern_libs.update(Distributed().get_extern_libs())
 
         object.__setattr__(self, 'extern_libs', tuple(extern_libs.items()))
         # object.__setattr__(self, 'rocshmem_device_lib', rocshmem_device_lib)
@@ -687,7 +687,7 @@ class HIPBackend(BaseBackend):
                 metadata['use_nvshmem'] = True
                 break
 
-        link_flagcx(llvm_mod, options.extern_libs, llvm, hcu)
+        link_flagcx(llvm_mod, options.extern_libs, llvm, hcu, options.arch)
         if knobs.compilation.enable_asan:
             default_libdir = Path(__file__).parent / 'lib'
             paths = [

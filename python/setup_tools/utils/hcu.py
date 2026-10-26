@@ -18,12 +18,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import json
 import os
 from pathlib import Path
 import re
 import subprocess
 
-from python.setup_tools.utils.default import FlagCXRegistrar, configure_flagcx_source
+from python.setup_tools.utils.default import FlagCXRegistrar
 
 # PR #667 provides the DU Device API bitcode build. Keep this pin specific to
 # HCU: the other backends still use their existing FlagCX revisions.
@@ -32,8 +33,17 @@ FLAGCX_HCU_COMMIT = "2ca624ac84ed71bfed259d42400e39f2f6444e72"
 
 
 def relocate_flagcx():
-    configure_flagcx_source("hcu/third_party/flagcx", url=FLAGCX_HCU_URL, commit_id=FLAGCX_HCU_COMMIT,
-                            source_dir=os.environ.get("FLAGCX_SOURCE_DIR"))
+    from python.setup_tools.utils import flagtree_submodules
+    from python.setup_tools.utils.tools import flagtree_configs
+
+    dependency = flagtree_submodules.get("flagcx")
+    if dependency is None:
+        return
+    dependency.url = FLAGCX_HCU_URL
+    dependency.commit_id = FLAGCX_HCU_COMMIT
+    source_dir = os.environ.get("FLAGCX_SOURCE_DIR")
+    dependency.dst_path = str(Path(source_dir).expanduser().resolve()) if source_dir else str(
+        Path(flagtree_configs.flagtree_submodule_dir) / "hcu/third_party/flagcx")
 
 
 def _device_arch(sdk):
@@ -99,10 +109,33 @@ def _toolchain():
 
 
 class HCUFlagCXRegistrar(FlagCXRegistrar):
-    """Supply DTK build parameters and HCU bundle paths to the shared registrar."""
+    """Supply DTK build parameters while using the shared installation layout."""
 
-    always_rebuild = True
+    # The make target tracks incremental builds; do not keep a second copy of
+    # artifacts in a cache that cannot identify the DTK/build configuration.
+    cache_build = False
     require_header_manifest = True
+
+    def _json_include_dir(self):
+        """Find the header-only JSON dependency, initializing it if necessary."""
+        source = Path(self.flagcx_src_dir)
+        override = os.environ.get("JSON_INCLUDE_DIR")
+        candidates = [Path(override).expanduser()] if override else [
+            source / "third-party/json/single_include",
+            Path("/usr/include"),
+        ]
+        for candidate in candidates:
+            if (candidate / "nlohmann/json.hpp").is_file():
+                return candidate.resolve()
+        if override:
+            raise RuntimeError(f"nlohmann/json.hpp is missing under JSON_INCLUDE_DIR={override}")
+        if (source / ".git").exists():
+            subprocess.run(["git", "submodule", "update", "--init", "--", "third-party/json"], cwd=source, check=True)
+        candidate = source / "third-party/json/single_include"
+        if not (candidate / "nlohmann/json.hpp").is_file():
+            raise RuntimeError("FlagCX needs nlohmann/json.hpp. Install nlohmann-json3-dev, initialize "
+                               "FlagCX's third-party/json submodule, or set JSON_INCLUDE_DIR.")
+        return candidate.resolve()
 
     def get_compile_cmds(self):
         source = Path(self.flagcx_src_dir)
@@ -116,7 +149,6 @@ class HCUFlagCXRegistrar(FlagCXRegistrar):
         json_dir = self._json_include_dir()
         build_dir = source / "build/hcu" / self.arch
         self.src_lib_dir = build_dir / "lib"
-        self.cache_lib_dir = self.cache_root_dir / "hcu" / self.arch
         self._set_library_paths()
         cmd = [
             "make",
@@ -138,16 +170,11 @@ class HCUFlagCXRegistrar(FlagCXRegistrar):
         # The common registrar groups equal commands and runs this target once.
         return {self.shared_lib_name: cmd, self.bitcode_name: cmd}
 
-    def _get_runtime_path(self, lib_name):
-        return Path(self.flagtree_dir) / "third_party/hcu/backend/lib/flagcx" / lib_name
-
-    def _get_required_dst_files_paths(self):
-        paths = super()._get_required_dst_files_paths()
-        paths["include"] += (self._get_runtime_path(self.bitcode_name).parent / "include", )
-        return paths
-
-    def _get_install_metadata(self):
-        return {"backend": self.backend_name, "arch": self.arch}
+    def _compile_and_cache(self):
+        super()._compile_and_cache()
+        metadata = {"backend": self.backend_name, "arch": self.arch}
+        path = self._get_runtime_path(self.bitcode_name).parent / "metadata.json"
+        path.write_text(json.dumps(metadata, indent=2) + "\n")
 
 
 def handle_flagcx(*args, **kwargs):
@@ -156,7 +183,8 @@ def handle_flagcx(*args, **kwargs):
 
 def get_package_data(backends):
     return {
-        "triton.backends.hcu": ["lib/flagcx/*", "lib/flagcx/include/*.h"],
+        "triton._C": ["libflagcx.so"],
+        "triton.backends.hcu": ["lib/libflagcx_device.bc", "lib/metadata.json"],
         "triton.experimental.tle.language": ["include/*.h"],
     }
 

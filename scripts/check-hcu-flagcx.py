@@ -8,20 +8,27 @@ import torch
 import triton
 import triton.language as tl
 from triton._flagtree_backend import FLAGTREE_BACKEND
+from triton.language import core
 from triton.runtime import driver
+
+
+@core.extern
+def flagcx_data_type_size(dtype, bitcode, _semantic=None):
+    return core.extern_elementwise(
+        lib_name="flagcx",
+        lib_path=core._unwrap_if_constexpr(bitcode),
+        args=[dtype],
+        arg_type_symbol_dict={(core.int32, ): ("flagcxDataTypeSizeDevice", core.uint64)},
+        is_pure=True,
+        _semantic=_semantic,
+    )
 
 
 @triton.jit
 def check_device_library(output, BC: tl.constexpr):
     # flagcxChar == 0; its size is one byte. This function is independent of
     # communicators, so linking can be checked before setting up multiple ranks.
-    size = tl.extern_elementwise(
-        lib_name="flagcx",
-        lib_path=BC,
-        args=[tl.full((), 0, tl.int32)],
-        arg_type_symbol_dict={(tl.int32, ): ("flagcxDataTypeSizeDevice", tl.uint64)},
-        is_pure=True,
-    )
+    size = flagcx_data_type_size(tl.full((), 0, tl.int32), BC)
     tl.store(output, size.to(tl.int64))
 
 

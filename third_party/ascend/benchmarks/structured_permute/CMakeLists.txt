@@ -8,3 +8,17 @@ include("${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/tikcpp/asce
 ascendc_library(permute_device STATIC aiv.cpp)
 add_library(permute_reference SHARED launch.cpp)
 target_link_libraries(permute_reference PRIVATE permute_device)
+
+# Opt-in ABI contract tests link the same packaged device bitcode as Triton.
+set(FLAGTREE_DEVICE_BITCODE "" CACHE FILEPATH "Packaged custom_ops.bc for UB ABI tests")
+if(FLAGTREE_DEVICE_BITCODE)
+  if(NOT EXISTS "${FLAGTREE_DEVICE_BITCODE}")
+    message(FATAL_ERROR "Missing FLAGTREE_DEVICE_BITCODE: ${FLAGTREE_DEVICE_BITCODE}")
+  endif()
+  ascendc_library(ub_contract_device STATIC ub_contract.cpp)
+  ascendc_compile_options(ub_contract_device PRIVATE
+    -Xclang -mlink-builtin-bitcode -Xclang "${FLAGTREE_DEVICE_BITCODE}"
+    --cce-auto-sync=off)
+  add_library(ub_contract_reference SHARED ub_contract_launch.cpp)
+  target_link_libraries(ub_contract_reference PRIVATE ub_contract_device)
+endif()

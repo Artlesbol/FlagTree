@@ -107,8 +107,9 @@ def test_join_resource_and_block_boundaries(q, dtype):
     x, z = cpu.npu()[1:], zcpu.npu()
     out = torch.full((2*q+2,), -111, dtype=dtype, device='npu')
     side = torch.full((q,), -111, dtype=dtype, device='npu')
-    kernel = _join_admission[(1,)](x, z, out[1:], side, Q=q, ROUTE='computed', XS=1, YS=1)
-    expected = torch.stack((cpu[1:1+q]+1, zcpu-1), -1).reshape(-1)
+    route = 'dense' if q > 2048 else 'computed'
+    kernel = _join_admission[(1,)](x, z, out[1:], side, Q=q, ROUTE=route, XS=1, YS=1)
+    expected = torch.stack((cpu[1:1+q], zcpu), -1).reshape(-1) if route == 'dense' else torch.stack((cpu[1:1+q]+1, zcpu-1), -1).reshape(-1)
     assert torch.equal(out.cpu()[1:-1], expected)
     assert out.cpu()[[0, -1]].tolist() == [-111, -111]
     if q > 2048:
@@ -128,3 +129,24 @@ def test_masked_logical_byte_boundaries(valid):
     ref += 1
     assert torch.equal(out.cpu(), ref.reshape(q, 2).flip(-1).reshape(-1))
     assert torch.equal(side.cpu(), ref)
+
+
+def test_computed_large_join_budget_contract(record_property):
+    # CANN 9.0 currently needs 224 KiB for this combination on 192 KiB UB.
+    # A future compiler may tile it successfully. Both legal outcomes are
+    # checked: exact outputs, or an explicit compile-time resource diagnostic.
+    q = 4096
+    cpu = torch.arange(q, dtype=torch.int32).remainder(71).float()
+    x, z = cpu.npu(), cpu.flip(0).npu()
+    out, side = torch.empty(2*q, device='npu'), torch.empty(q, device='npu')
+    try:
+        _join_admission[(1,)](x, z, out, side, Q=q, ROUTE='computed', XS=1, YS=1)
+    except Exception as error:
+        assert type(error).__name__ == 'MLIRCompilationError', type(error)
+        assert 'ub overflow, requires' in str(error) and 'bits available' in str(error)
+        record_property('budget_outcome', 'explicit_compile_time_ub_overflow')
+    else:
+        torch.npu.synchronize()
+        expected = torch.stack((cpu+1, cpu.flip(0)-1), -1).reshape(-1)
+        assert torch.equal(out.cpu(), expected)
+        record_property('budget_outcome', 'compiled_and_bit_exact')

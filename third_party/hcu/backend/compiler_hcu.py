@@ -812,8 +812,22 @@ class HIPBackend(BaseBackend):
             clang_path = HIPBackend.path_to_rocm_clang()
             clang_args = HIPBackend._get_clang_args(metadata, options)
 
+            # Linked device libraries can make the emitted assembly require
+            # explicit target-ID features (for example sramecc+). Assemble with
+            # that exact ID, rather than dropping features from the directive.
+            target = re.search(r'^\s*\.amdgcn_target\s+"([^"]+)"', src, re.MULTILINE)
+            if target is not None:
+                prefix = hcu.TARGET_TRIPLE + "--"
+                target_id = target.group(1)
+                if not target_id.startswith(prefix):
+                    raise HSACOError(f"Unexpected assembly target: {target_id}")
+                target_id = target_id[len(prefix):]
+                if target_id.split(":", 1)[0] != options.arch.split(":", 1)[0]:
+                    raise HSACOError(f"Assembly targets {target_id}, but the kernel targets {options.arch}")
+                clang_args = [f"-mcpu={target_id}" if arg.startswith("-mcpu=") else arg for arg in clang_args]
+
             # Compile to HSACO
-            hsaco_command = [clang_path] + clang_args + [asm_file, "-x", "assembler", "-o", hsaco_file]
+            hsaco_command = [clang_path] + clang_args + ["-x", "assembler", asm_file, "-o", hsaco_file]
             subprocess.run(hsaco_command, check=True, capture_output=True, text=True)
 
             with open(hsaco_file, "rb") as fd_out:

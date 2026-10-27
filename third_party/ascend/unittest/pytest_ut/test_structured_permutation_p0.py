@@ -74,9 +74,10 @@ def _join_admission(X, Z, Y, SIDE, Q: tl.constexpr, ROUTE: tl.constexpr,
     tl.store(Y + tl.arange(0, 2*Q) * YS, y)
 
 
+@pytest.mark.parametrize('policy', ['auto', 'native', 'packed'])
 @pytest.mark.parametrize('route', ['dense', 'computed', 'shared', 'mask', 'xstride', 'ystride'])
 @pytest.mark.parametrize('dtype', [torch.float16, torch.bfloat16, torch.float32])
-def test_dense_native_admission(route, dtype):
+def test_dense_native_admission(policy, route, dtype):
     q = 32
     xs, ys = (3 if route == 'xstride' else 1), (2 if route == 'ystride' else 1)
     cpu = torch.arange(q*xs+2, dtype=torch.int32).remainder(37).to(dtype)
@@ -84,7 +85,7 @@ def test_dense_native_admission(route, dtype):
     x, z = cpu.npu()[1:], zcpu.npu()
     storage = torch.full((2*q*ys+2,), -111, dtype=dtype, device='npu')
     side = torch.full((q,), -111, dtype=dtype, device='npu')
-    kernel = _join_admission[(1,)](x, z, storage[1:], side, Q=q, ROUTE=route, XS=xs, YS=ys)
+    kernel = _join_admission[(1,)](x, z, storage[1:], side, Q=q, ROUTE=route, XS=xs, YS=ys, structured_join_lowering=policy)
     a, b = cpu[1:1+q*xs:xs].clone(), zcpu.clone()
     if route == 'mask':
         a[-1:] = 0
@@ -97,7 +98,7 @@ def test_dense_native_admission(route, dtype):
     guard = torch.ones(storage.numel(), dtype=torch.bool)
     guard[1:1+2*q*ys:ys] = False
     assert torch.all(storage.cpu()[guard] == -111)
-    assert kernel.metadata.uses_structured_permutation == (route != 'dense' or kernel.metadata.enable_auto_blockify)
+    assert kernel.metadata.uses_structured_permutation == (route != 'dense' or policy != 'native')
 
 
 @pytest.mark.parametrize('q', [1, 2, 4, 8, 16, 1024, 2048, 4096])

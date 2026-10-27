@@ -111,8 +111,8 @@ not dynamic `tl.gather` operations.
 
 Before dialect conversion, the pass proves single-use dense unmasked loads and
 contiguous terminal stores. A simple rank-two split meeting that proof retains CANN's native load/store-folding
-path. A qualifying rank-one word join does so for one row per block; persistent
-auto-blockify uses the compact interleave path instead. Transposed, computed,
+path. Joins use compact interleave within the resource budget in both dispatch
+modes. The explicit `native` join policy requires the same dense graph proof. Transposed, computed,
 masked and shared inputs do not qualify. This is a graph property, not a
 benchmark-name or size-specific admission rule.
 

@@ -107,3 +107,19 @@ def test_unsigned_byte_channels(q, xs, ys):
     guards = torch.ones(n*ys+2, dtype=torch.bool)
     guards[1:1+n*ys:ys] = False
     assert torch.all(storage.cpu()[guards] == 111)
+
+
+@triton.jit
+def _unit_masked_load(X, Y):
+    i = tl.arange(0, 2)
+    value = tl.load(X + i * 3, i < 1, other=0)
+    tl.store(Y + i, value)
+
+
+@pytest.mark.parametrize('dtype', [torch.int8, torch.uint8])
+def test_unit_stride_masked_byte_load_without_split(dtype):
+    raw = torch.arange(8, dtype=torch.int32).to(dtype).npu()
+    x = raw[1:7:3]
+    storage = torch.full((4,), 111, dtype=dtype, device='npu')
+    _unit_masked_load[(1,)](x, storage[1:3])
+    assert storage.cpu().tolist() == [111, 1, 0, 111]

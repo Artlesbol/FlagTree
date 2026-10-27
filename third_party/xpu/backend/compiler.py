@@ -854,6 +854,29 @@ class XPUBackend(BaseBackend):
             binfile = os.path.join(tmpdir, "kernel.bin")
             with open(objfile, "wb") as f:
                 f.write(mod)
+
+            # FlagCX distributed kernels on KunlunXin reference XSHMEM device
+            # runtime symbols (get_xshmemi_device_state /
+            # xshmemi_threadfence_system).  The consumer must provide those at
+            # final device link; do a relocatable pre-link before elfconv.
+            xshmem_lib = os.environ.get("FLAGCX_XSHMEM_DEVICE_LIB")
+            if not xshmem_lib:
+                ccl_home = os.environ.get("FLAGCX_XPU_CCL_HOME") or os.environ.get("XCCL_HOME")
+                if ccl_home:
+                    candidate = os.path.join(ccl_home, "lib", "libxshmem_device.a")
+                    if os.path.isfile(candidate):
+                        xshmem_lib = candidate
+            if metadata.get("xpu_uses_flagcx"):
+                if not xshmem_lib or not os.path.isfile(xshmem_lib):
+                    raise RuntimeError(
+                        "XPU FlagCX distributed kernel needs the XSHMEM device library; "
+                        "set FLAGCX_XSHMEM_DEVICE_LIB to libxshmem_device.a")
+                ld = os.path.join(clang_path, "ld.lld")
+                combined = os.path.join(tmpdir, "kernel.combined.o")
+                run_cmd([ld, "-r", objfile, xshmem_lib, "-o", combined],
+                        env=llvm19_toolchain.llvm19_env("xpu"))
+                objfile = combined
+
             cmd = [elfconv, objfile, binfile, clang_path]
             # The elfconv script drives the per-arch LLVM 19 tools (clang,
             # ld.lld, llvm-readelf, llvm-objcopy, llvm-objdump, xpu-xxd) and the

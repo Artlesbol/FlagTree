@@ -338,6 +338,17 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     # Parse all bitcode paths
     bitcodes = re.findall(BITCODES_REGEX, linalg)
     metadata["bitcodes"] = [val for group in bitcodes for val in group if val]
+    if "custom_flagtree_stride_gather_" in linalg:
+        # This is a compiler-generated primitive; callers need not import TLE
+        # or annotate kernels with a bitcode path. The Ascend build produces
+        # this package resource together with the backend.
+        import triton
+        bitcode = Path(triton.__file__).resolve().parent / (
+            "experimental/tle/language/dsa/ascend/custom_ops/custom_ops.bc")
+        if not bitcode.is_file():
+            raise RuntimeError("Missing structured permutation bitcode; rebuild the Ascend backend")
+        if str(bitcode) not in metadata["bitcodes"]:
+            metadata["bitcodes"].append(str(bitcode))
     return linalg, metadata
 
 

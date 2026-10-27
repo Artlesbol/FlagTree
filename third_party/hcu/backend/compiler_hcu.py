@@ -2,6 +2,7 @@ from triton.backends.compiler import BaseBackend, GPUTarget, Language
 from triton._C.libtriton import ir, passes, llvm, hcu, distributed, tle
 from triton import knobs
 from triton.runtime.errors import HSACOError
+from triton.runtime import DistributedRtContext
 from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 from types import ModuleType
@@ -410,6 +411,11 @@ class HIPBackend(BaseBackend):
     def make_ttgir(mod, metadata, options):
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
+        # Fuse node transfers before inserting the implicit runtime arguments,
+        # while pointer bindings still refer to the original argument indices.
+        tle.passes.add_fuse_node_remote_transfers(pm)
+        if DistributedRtContext().is_lite_mode:
+            tle.passes.add_params_for_distribution(pm)
         passes.ttir.add_convert_to_ttgpuir(pm, f"hip:{options.arch}", options.num_warps, options.warp_size,
                                            options.num_ctas)
         # flagtree tle: lower tle.extract_tile

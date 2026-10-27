@@ -92,7 +92,7 @@ static transposes use vector index arithmetic and a private UB permutation
 primitive; large transposes retain native tiling. These are static permutations,
 not dynamic `tl.gather` operations.
 
-Floating-point joins move values as same-width integers so concat/copy cannot
+In the packed path, floating-point joins move values as same-width integers so concat/copy cannot
 canonicalize NaN payloads. The c220 vector path is enabled for Ascend 910B targets;
 other architectures and encoded join layouts retain the existing lowering.
 

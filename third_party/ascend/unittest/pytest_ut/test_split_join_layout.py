@@ -69,7 +69,7 @@ def test_split_join_layout(shape, dtype, swap, strides):
 def _permute_bits(X, Y, SHAPE: tl.constexpr, ORDER: tl.constexpr, N: tl.constexpr):
     i = tl.arange(0, N)
     v = tl.reshape(tl.load(X + i), SHAPE)
-    tl.store(Y + i, tl.reshape(tl.permute(v, *ORDER), (N,)))
+    tl.store(Y + i, tl.reshape(tl.permute(v, ORDER), (N,)))
 
 
 @pytest.mark.parametrize("shape,order", [

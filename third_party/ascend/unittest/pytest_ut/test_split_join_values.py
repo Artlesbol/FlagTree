@@ -54,8 +54,8 @@ def test_split_join_preserves_float_bits(dtype, xs, ys):
     n, a, b = raw.numel(), 4, 16
     storage = torch.zeros(n*xs+2, dtype=bits_dtype)
     storage[1:1+n*xs:xs] = raw
-    # Transfer/read integer backing storage. torch_npu's floating-point
-    # materialization of a strided view may canonicalize NaNs on its own.
+    # Compare integer backing storage to isolate permutation from floating-point
+    # host/device conversion.
     xraw = storage.npu()
     x = xraw.view(dtype)[1:1+n*xs:xs]
     zraw = raw[:n//2].flip(0).contiguous()

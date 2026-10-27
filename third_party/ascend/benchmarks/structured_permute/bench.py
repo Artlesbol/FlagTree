@@ -121,6 +121,14 @@ def main():
         def launch():
             return kernel[(batch,)](x, z, y, Q=q)
     compiled = launch()
+    if args.impl == "triton":
+        # Match archived-binary controls exactly. Compile through JIT once,
+        # then capture the CompiledKernel launcher for every measured call.
+        runner = compiled[(batch, 1, 1)]
+        values = (x, z, y, t, j, q) if args.case == "nested" else (x, z, y, q)
+        def launch():
+            runner(*values)
+            return compiled
     torch.npu.synchronize()
     if args.impl == "triton" and args.dump_dir:
         args.dump_dir.mkdir(parents=True, exist_ok=True)
@@ -193,6 +201,7 @@ def main():
                   launch_blocks=launch_blocks,
                   auto_blockify_env=os.environ.get("TRITON_ALL_BLOCKS_PARALLEL"),
                   replay_outputs_verified=True,
+                  launch_api="compiled_kernel" if args.impl == "triton" else "native_aiv",
                   capture_stream_changed=capture_stream != initial_stream,
                   compiler_metadata=compiled.metadata._asdict() if args.impl == "triton" else None,
                   aiv_join="vector_gather_including_index_load")

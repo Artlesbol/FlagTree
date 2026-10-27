@@ -16,7 +16,9 @@ reference uses `GatherMask` for split and vector `Gather` for join/transpose.
 Its index-table HBM load is included. It is a vector reference, not a hardware
 peak-throughput claim. `aiv.cpp` treats values as raw 16/32-bit words.
 
-Each run checks every output before timing. After graph capture it clears all
+Triton is compiled through JIT once, then every captured call uses the
+`CompiledKernel` launcher, matching archived-binary controls. Each run checks
+every output before timing. After graph capture it clears all
 outputs, replays the graph, and checks them again. Native launches resolve the
 current stream inside the launch callback so they are captured on the graph's
 stream. Each graph contains 64 kernel calls by default; event time is divided by the

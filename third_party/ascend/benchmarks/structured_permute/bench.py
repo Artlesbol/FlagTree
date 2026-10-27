@@ -63,6 +63,8 @@ def main():
     p.add_argument("--q", type=int, default=256)
     p.add_argument("--batch", type=int, default=2048)
     p.add_argument("--library", type=Path)
+    p.add_argument("--dump-dir", type=Path,
+                   help="save compiler artifacts before timing")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--warmup", type=int, default=10)
     p.add_argument("--iters", type=int, default=100)
@@ -114,6 +116,14 @@ def main():
             return kernel[(batch,)](x, z, y, Q=q)
     compiled = launch()
     torch.npu.synchronize()
+    if args.impl == "triton" and args.dump_dir:
+        args.dump_dir.mkdir(parents=True, exist_ok=True)
+        for name, data in compiled.asm.items():
+            dest = args.dump_dir / ("kernel." + name)
+            if isinstance(data, (bytes, bytearray)):
+                dest.write_bytes(data)
+            elif isinstance(data, str):
+                dest.write_text(data)
     if args.case == "split":
         expected = xcpu.reshape(batch, q, 2).transpose(1, 2).reshape(batch, 2*q)
     elif args.case == "join":

@@ -722,8 +722,10 @@ class XPUBackend(BaseBackend):
 
         if opt.extern_libs:
             if metadata["is_sdnn"]:
-                paths = [path for (name, path) in opt.extern_libs
-                         if "sdnn" in name and name != "libflagcx" and xpu.llvm.need_extern_lib(mod)]
+                paths = [
+                    path for (name, path) in opt.extern_libs
+                    if "sdnn" in name and name != "libflagcx" and xpu.llvm.need_extern_lib(mod)
+                ]
             else:
                 paths = [
                     path for (name, path) in opt.extern_libs
@@ -868,13 +870,11 @@ class XPUBackend(BaseBackend):
                         if os.path.isfile(candidate):
                             xshmem_lib = candidate
                 if not xshmem_lib or not os.path.isfile(xshmem_lib):
-                    raise RuntimeError(
-                        "XPU FlagCX distributed kernel needs the XSHMEM device library; "
-                        "set FLAGCX_XSHMEM_DEVICE_LIB to libxshmem_device.a")
+                    raise RuntimeError("XPU FlagCX distributed kernel needs the XSHMEM device library; "
+                                       "set FLAGCX_XSHMEM_DEVICE_LIB to libxshmem_device.a")
                 ld = os.path.join(clang_path, "ld.lld")
                 combined = os.path.join(tmpdir, "kernel.combined.o")
-                run_cmd([ld, "-r", objfile, xshmem_lib, "-o", combined],
-                        env=llvm19_toolchain.llvm19_env("xpu"))
+                run_cmd([ld, "-r", objfile, xshmem_lib, "-o", combined], env=llvm19_toolchain.llvm19_env("xpu"))
                 objfile = combined
 
             cmd = [elfconv, objfile, binfile, clang_path]

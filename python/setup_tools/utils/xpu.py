@@ -79,8 +79,7 @@ def _has_xpu_sdk(path):
 
 def _has_xccl(path):
     path = Path(path).expanduser()
-    return ((path / "include" / "bkcl.h").is_file()
-            and any(lib.is_file() for lib in (path / "so").glob("libbkcl.so*")))
+    return ((path / "include" / "bkcl.h").is_file() and any(lib.is_file() for lib in (path / "so").glob("libbkcl.so*")))
 
 
 def _resolve_flagcx_toolchain():
@@ -102,6 +101,7 @@ def _resolve_flagcx_toolchain():
 
 
 class XPUFlagCXRegistrar(FlagCXRegistrar):
+
     def _build_env(self):
         env = os.environ.copy()
         runtime_dir = Path(self.flagtree_dir) / "third_party" / "_xtdk_llvm19" / "lib"
@@ -144,28 +144,29 @@ class XPUFlagCXRegistrar(FlagCXRegistrar):
             str(Path(self.flagtree_dir) / "third_party" / "xpu" / "backend" / "llvm19" / "bin" / "clang"),
             str(Path(os.environ["XTDK_HOME"]) / "bin" / "clang") if os.environ.get("XTDK_HOME") else None,
         )
-        clang_path = next((str(Path(path).expanduser().resolve()) for path in clang_candidates
+        clang_path = next((str(Path(path).expanduser().resolve())
+                           for path in clang_candidates
                            if path and Path(path).expanduser().is_file()), None)
         if not clang_path:
             raise RuntimeError("XPU FlagCX device IR requires XTDK LLVM 19 clang; set FLAGCX_XPU_CLANG")
-        clang_version = subprocess.run([clang_path, "--version"], capture_output=True, text=True,
-                                       check=True, env=self._build_env()).stdout
+        clang_version = subprocess.run([clang_path, "--version"], capture_output=True, text=True, check=True,
+                                       env=self._build_env()).stdout
         if not re.search(r"\bversion 19(?:\.|\b)", clang_version):
             raise RuntimeError(f"XPU FlagCX device IR requires XTDK LLVM 19 clang: {clang_path}")
         build_args = [f"BUILDDIR={self.src_lib_dir.parent}", f"DEVICE_HOME={sdk_path}", f"CCL_HOME={ccl_path}"]
         device_cmd = ["make", "-C", str(device_dir), f"XPU_CLANG={clang_path}", *build_args]
-        host_cmd = ["make", "USE_KUNLUNXIN=1", "COMPILE_KERNEL=0",
-                    f"XTDK_HOME={Path(clang_path).parent.parent}",
-                    *build_args, "-j", str(os.cpu_count() or 1)]
+        host_cmd = [
+            "make", "USE_KUNLUNXIN=1", "COMPILE_KERNEL=0", f"XTDK_HOME={Path(clang_path).parent.parent}", *build_args,
+            "-j",
+            str(os.cpu_count() or 1)
+        ]
         return {self.bitcode_name: device_cmd, self.shared_lib_name: host_cmd}
 
     def _compile_and_cache(self):
         printinfo(f"Initializing FlagCX submodules in {self.flagcx_src_dir}")
-        subprocess.run(["git", "submodule", "update", "--init", "--recursive"],
-                       cwd=self.flagcx_src_dir, check=True)
+        subprocess.run(["git", "submodule", "update", "--init", "--recursive"], cwd=self.flagcx_src_dir, check=True)
         for command in self.get_compile_cmds().values():
-            subprocess.run([command[0], "-B", *command[1:]], cwd=self.flagcx_src_dir,
-                           check=True, env=self._build_env())
+            subprocess.run([command[0], "-B", *command[1:]], cwd=self.flagcx_src_dir, check=True, env=self._build_env())
         super()._compile_and_cache()
 
     def run(self):

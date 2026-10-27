@@ -28,8 +28,8 @@ struct TritonXPUAddDistributedParamsPass
             ctx, {NamedAttribute(StringAttr::get(ctx, "tt.name"),
                                  StringAttr::get(ctx, name))});
       };
-      SmallVector<Attribute> argAttrs{
-          makeNameAttr("device_comm_ptr"), makeNameAttr("device_mem_ptr")};
+      SmallVector<Attribute> argAttrs{makeNameAttr("device_comm_ptr"),
+                                      makeNameAttr("device_mem_ptr")};
       if (auto oldAttrs = func.getArgAttrsAttr())
         llvm::append_range(argAttrs, oldAttrs);
       else
@@ -44,4 +44,4 @@ struct TritonXPUAddDistributedParamsPass
   }
 };
 
-}
+} // namespace mlir::triton::xpu

@@ -7,8 +7,8 @@
 namespace mlir::triton::xpu {
 
 void populateGetDeviceIdOpToFlagCXPatterns(LLVMTypeConverter &typeConverter,
-                                          RewritePatternSet &patterns,
-                                          PatternBenefit benefit);
+                                           RewritePatternSet &patterns,
+                                           PatternBenefit benefit);
 
 }
 

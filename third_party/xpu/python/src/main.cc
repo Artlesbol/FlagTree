@@ -1,8 +1,8 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Signals.h"
+#include <optional>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <optional>
 #include <string>
 
 namespace py = pybind11;
@@ -21,18 +21,17 @@ void init_triton_xpu_tle_compat(py::module &&m) {
       .value("Intra", FlagCXTeamKind::INTRA)
       .value("Inter", FlagCXTeamKind::INTER)
       .value("World", FlagCXTeamKind::WORLD)
-      .def_static("from_str", [](const std::string &name)
-                      -> std::optional<FlagCXTeamKind> {
-        if (name == "intra" || name == "intra_node")
-          return FlagCXTeamKind::INTRA;
-        if (name == "inter" || name == "inter_node")
-          return FlagCXTeamKind::INTER;
-        if (name == "world")
-          return FlagCXTeamKind::WORLD;
-        return std::nullopt;
-      })
-      .def_static("from_int", [](int value)
-                      -> std::optional<FlagCXTeamKind> {
+      .def_static("from_str",
+                  [](const std::string &name) -> std::optional<FlagCXTeamKind> {
+                    if (name == "intra" || name == "intra_node")
+                      return FlagCXTeamKind::INTRA;
+                    if (name == "inter" || name == "inter_node")
+                      return FlagCXTeamKind::INTER;
+                    if (name == "world")
+                      return FlagCXTeamKind::WORLD;
+                    return std::nullopt;
+                  })
+      .def_static("from_int", [](int value) -> std::optional<FlagCXTeamKind> {
         if (value < 0 || value > 2)
           return std::nullopt;
         return static_cast<FlagCXTeamKind>(value);
@@ -41,55 +40,55 @@ void init_triton_xpu_tle_compat(py::module &&m) {
       .value("Thread", FlagCXCoopKind::THREAD)
       .value("Warp", FlagCXCoopKind::WARP)
       .value("Block", FlagCXCoopKind::BLOCK)
-      .def_static("from_str", [](const std::string &name)
-                      -> std::optional<FlagCXCoopKind> {
-        if (name == "thread")
-          return FlagCXCoopKind::THREAD;
-        if (name == "warp")
-          return FlagCXCoopKind::WARP;
-        if (name == "block")
-          return FlagCXCoopKind::BLOCK;
-        return std::nullopt;
-      });
+      .def_static("from_str",
+                  [](const std::string &name) -> std::optional<FlagCXCoopKind> {
+                    if (name == "thread")
+                      return FlagCXCoopKind::THREAD;
+                    if (name == "warp")
+                      return FlagCXCoopKind::WARP;
+                    if (name == "block")
+                      return FlagCXCoopKind::BLOCK;
+                    return std::nullopt;
+                  });
   py::enum_<SyncScope>(attr, "SyncScope")
       .value("System", SyncScope::SYSTEM)
       .value("Device", SyncScope::DEVICE)
       .value("Block", SyncScope::BLOCK)
       .value("Thread", SyncScope::THREAD)
-      .def_static("from_str", [](const std::string &name)
-                      -> std::optional<SyncScope> {
-        if (name == "system")
-          return SyncScope::SYSTEM;
-        if (name == "device")
-          return SyncScope::DEVICE;
-        if (name == "block")
-          return SyncScope::BLOCK;
-        if (name == "thread")
-          return SyncScope::THREAD;
-        return std::nullopt;
-      });
+      .def_static("from_str",
+                  [](const std::string &name) -> std::optional<SyncScope> {
+                    if (name == "system")
+                      return SyncScope::SYSTEM;
+                    if (name == "device")
+                      return SyncScope::DEVICE;
+                    if (name == "block")
+                      return SyncScope::BLOCK;
+                    if (name == "thread")
+                      return SyncScope::THREAD;
+                    return std::nullopt;
+                  });
   py::enum_<MemoryOrder>(attr, "MemoryOrder")
       .value("Relaxed", MemoryOrder::RELAXED)
       .value("Acquire", MemoryOrder::ACQUIRE)
       .value("Release", MemoryOrder::RELEASE)
       .value("AcqRel", MemoryOrder::ACQ_REL)
-      .def_static("from_str", [](const std::string &name)
-                      -> std::optional<MemoryOrder> {
-        if (name == "relaxed")
-          return MemoryOrder::RELAXED;
-        if (name == "acquire")
-          return MemoryOrder::ACQUIRE;
-        if (name == "release")
-          return MemoryOrder::RELEASE;
-        if (name == "acqrel" || name == "acq_rel")
-          return MemoryOrder::ACQ_REL;
-        return std::nullopt;
-      });
+      .def_static("from_str",
+                  [](const std::string &name) -> std::optional<MemoryOrder> {
+                    if (name == "relaxed")
+                      return MemoryOrder::RELAXED;
+                    if (name == "acquire")
+                      return MemoryOrder::ACQUIRE;
+                    if (name == "release")
+                      return MemoryOrder::RELEASE;
+                    if (name == "acqrel" || name == "acq_rel")
+                      return MemoryOrder::ACQ_REL;
+                    return std::nullopt;
+                  });
 
   m.def_submodule("utils");
 }
 
-}
+} // namespace
 
 #define FOR_EACH_1(MACRO, X) MACRO(X)
 #define FOR_EACH_2(MACRO, X, ...) MACRO(X) FOR_EACH_1(MACRO, __VA_ARGS__)

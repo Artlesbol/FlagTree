@@ -6,9 +6,8 @@ from . import dsa
 from . import gpu
 from . import raw
 from .dsa.pipe import pipe
-from .distributed import (B, P, S, MeshConfig, ShardedTensor, ShardingSpec, _get_local_rank,
-                          device_mesh, distributed_barrier, make_sharded_tensor, n_pes, remote, sharding, shard_id)
-
+from .distributed import (B, P, S, MeshConfig, ShardedTensor, ShardingSpec, _get_local_rank, device_mesh,
+                          distributed_barrier, make_sharded_tensor, n_pes, remote, sharding, shard_id)
 
 __all__ = [
     "gpu", "dsa", "pipe", "raw", "MeshConfig", "device_mesh", "B", "S", "P", "sharding", "ShardingSpec",

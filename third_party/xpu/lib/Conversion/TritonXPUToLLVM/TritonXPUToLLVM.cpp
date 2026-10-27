@@ -182,10 +182,10 @@ struct ConvertTritonXPUToLLVM
     // merged into the module at the LLVM 19 stage (tle/raw/merge.py).
     mlir::triton::xpu::populateRawOpToLLVMPatterns(typeConverter, patterns,
                                                    benefit);
-    mlir::triton::xpu::populateRemotePointerOpToLLVMPatterns(
-        typeConverter, patterns, benefit);
-    mlir::triton::xpu::populateFlagCxOpToLLVMPatterns(typeConverter,
-                                                          patterns, benefit);
+    mlir::triton::xpu::populateRemotePointerOpToLLVMPatterns(typeConverter,
+                                                             patterns, benefit);
+    mlir::triton::xpu::populateFlagCxOpToLLVMPatterns(typeConverter, patterns,
+                                                      benefit);
 
     // TODO(thomas): this should probably be done in a separate step to not
     // interfere with our own lowering of arith ops. Add arith/math's patterns

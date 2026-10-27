@@ -10,14 +10,13 @@ import triton.experimental.tle.language as tle
 
 from triton.backends.xpu.tle_supported import TLE_SUPPORTED_PRIMITIVES
 
-
 pytestmark = [
     pytest.mark.skipif(int(os.environ.get("WORLD_SIZE", "1")) != 2, reason="needs two devices under torchrun"),
     pytest.mark.skipif("shard_id" not in TLE_SUPPORTED_PRIMITIVES or not hasattr(tle, "n_pes"),
                        reason="XPU TLE device rank or n_pes is not implemented"),
-    pytest.mark.skipif(not all(hasattr(tle, name) for name in ("get_mem_pool", "create_dist_tensor",
-                                                       "cleanup_communicator")),
-                       reason="XPU TLE FlagCX communicator API is not available"),
+    pytest.mark.skipif(
+        not all(hasattr(tle, name) for name in ("get_mem_pool", "create_dist_tensor", "cleanup_communicator")),
+        reason="XPU TLE FlagCX communicator API is not available"),
 ]
 
 DEVICE_MESH = tle.device_mesh(tle.MeshConfig(device=2))

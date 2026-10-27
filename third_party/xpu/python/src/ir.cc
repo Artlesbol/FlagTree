@@ -940,8 +940,8 @@ void init_triton_ir(py::module &&m) {
                  builder.getI32IntegerAttr(order));
            })
       .def("create_remote_pointers",
-           [](TritonOpBuilder &self, Type resultTy, Value memory,
-              Value peer, Value offset, int32_t elementBytes) -> Value {
+           [](TritonOpBuilder &self, Type resultTy, Value memory, Value peer,
+              Value offset, int32_t elementBytes) -> Value {
              auto &builder = self.getBuilder();
              return self.create<triton::xpu::RemotePointerOp>(
                  resultTy, memory, peer, offset,

@@ -50,10 +50,9 @@ class MeshConfig:
 class device_mesh:
     """Immutable logical topology descriptor; does not launch or synchronize devices."""
 
-    def __init__(self, topology: Mapping[str, Any] | MeshConfig | None = None, *,
-                 _shape: Sequence[int] | None = None, _dim_names: Sequence[str] | None = None,
-                 _physical_ids: Sequence[int] | None = None, _launch_shape: Sequence[int] | None = None,
-                 _launch_dim_names: Sequence[str] | None = None):
+    def __init__(self, topology: Mapping[str, Any] | MeshConfig | None = None, *, _shape: Sequence[int] | None = None,
+                 _dim_names: Sequence[str] | None = None, _physical_ids: Sequence[int] | None = None,
+                 _launch_shape: Sequence[int] | None = None, _launch_dim_names: Sequence[str] | None = None):
         if topology is None:
             if _shape is None or _dim_names is None or _physical_ids is None:
                 raise ValueError("internal mesh constructor requires shape/names/physical ids")
@@ -202,8 +201,8 @@ class device_mesh:
         shape = tuple(len(indices) for indices, keep in zip(selected, keep_dim) if keep)
         names = tuple(name for name, keep in zip(self._dim_names, keep_dim) if keep)
         ids = tuple(self._physical_ids[self._linear_index(coords)] for coords in product(*selected))
-        return device_mesh(None, _shape=shape, _dim_names=names, _physical_ids=ids,
-                           _launch_shape=self._launch_shape, _launch_dim_names=self._launch_dim_names)
+        return device_mesh(None, _shape=shape, _dim_names=names, _physical_ids=ids, _launch_shape=self._launch_shape,
+                           _launch_dim_names=self._launch_dim_names)
 
     def __repr__(self) -> str:
         return f"DeviceMesh(shape={self._shape}, names={self._dim_names})"
@@ -289,8 +288,8 @@ def distributed_barrier(mesh=None, device_dptr=None, *, space=None, barrier_kind
 
 
 @builtin
-def remote(tensor, shard_id=None, scope=None, space="cluster", dtype=None, offset=None,
-           _semantic=None, _generator=None):
+def remote(tensor, shard_id=None, scope=None, space="cluster", dtype=None, offset=None, _semantic=None,
+           _generator=None):
     """Map a registered device buffer to a peer, returning a global pointer."""
     space = _unwrap_if_constexpr(space)
     scope = _unwrap_if_constexpr(scope)
@@ -320,12 +319,13 @@ def remote(tensor, shard_id=None, scope=None, space="cluster", dtype=None, offse
         offset_tensor = tl.cast(offset_tensor, tl.int64, _semantic=_semantic)
     builder = gluon_builder(_semantic, _generator, "create_remote_pointers")
     ptr_type = tl.pointer_type(dtype, 1)
-    result = builder.create_remote_pointers(ptr_type.to_ir(builder), _memory_handle(tensor, builder),
-                                            peer.handle, offset_tensor.handle, bits // 8)
+    result = builder.create_remote_pointers(ptr_type.to_ir(builder), _memory_handle(tensor, builder), peer.handle,
+                                            offset_tensor.handle, bits // 8)
     return tl.tensor(result, ptr_type)
 
 
 class _BroadcastSpec:
+
     def __repr__(self) -> str:
         return "B"
 
@@ -425,8 +425,7 @@ def sharding(mesh: device_mesh, split: Sequence[Any] | None = None,
     return ShardingSpec(mesh, groups, tuple(axis for axis in mesh.dim_names if axis in partial_axes), broadcast)
 
 
-def make_sharded_tensor(handle: Any, sharding: ShardingSpec,
-                        shape: Sequence[int] | None = None) -> ShardedTensor:
+def make_sharded_tensor(handle: Any, sharding: ShardingSpec, shape: Sequence[int] | None = None) -> ShardedTensor:
     if not isinstance(sharding, ShardingSpec):
         raise TypeError(f"sharding must be ShardingSpec, got {type(sharding).__name__}")
     normalized_shape = None

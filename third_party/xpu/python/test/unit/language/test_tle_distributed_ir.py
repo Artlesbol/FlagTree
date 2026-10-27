@@ -11,7 +11,6 @@ from triton.backends.xpu.compiler import XPUBackend
 from triton.compiler.compiler import ASTSource
 from triton.runtime._distributed import DistributedRtContext
 
-
 MESH = tle.device_mesh(tle.MeshConfig(device=2))
 
 
@@ -54,16 +53,13 @@ def _ir_text(module, path: Path):
 @pytest.mark.parametrize(
     "fn,signature,constexprs,op,symbol,lite",
     [
-        (_rank, {"out": "*i32", "comm": "i64", "mesh": "constexpr"}, {"mesh": MESH},
-         "get_device_id", "flagcxDevCommGetIntraRank", False),
-        (_size, {"out": "*i32", "comm": "i64"}, {},
-         "get_num_pes", "flagcxDevCommGetIntraSize", False),
-        (_barrier, {"out": "*i32", "comm": "i64", "mesh": "constexpr"}, {"mesh": MESH},
-         "distributed_barrier", "flagcxIntraBarrierSyncS", False),
-        (_remote, {"out": "*fp32", "mem": "i64"}, {},
-         "remote_pointer", "flagcxGetIntraPointerC", False),
-        (_implicit_rank, {"out": "*i32"}, {},
-         "get_device_id", "flagcxDevCommGetIntraRank", True),
+        (_rank, {"out": "*i32", "comm": "i64", "mesh": "constexpr"
+                 }, {"mesh": MESH}, "get_device_id", "flagcxDevCommGetIntraRank", False),
+        (_size, {"out": "*i32", "comm": "i64"}, {}, "get_num_pes", "flagcxDevCommGetIntraSize", False),
+        (_barrier, {"out": "*i32", "comm": "i64", "mesh": "constexpr"
+                    }, {"mesh": MESH}, "distributed_barrier", "flagcxIntraBarrierSyncS", False),
+        (_remote, {"out": "*fp32", "mem": "i64"}, {}, "remote_pointer", "flagcxGetIntraPointerC", False),
+        (_implicit_rank, {"out": "*i32"}, {}, "get_device_id", "flagcxDevCommGetIntraRank", True),
     ],
     ids=["rank", "size", "barrier", "remote", "implicit-rank"],
 )
@@ -78,8 +74,8 @@ def test_tle_flagcx_lowers_without_device(tmp_path, monkeypatch, fn, signature, 
     context = ir.context()
     ir.load_dialects(context)
     backend.load_dialects(context)
-    module = source.make_ir(target, options, backend.get_codegen_implementation(options),
-                            backend.get_module_map(), context)
+    module = source.make_ir(target, options, backend.get_codegen_implementation(options), backend.get_module_map(),
+                            context)
     metadata = {"target": target, **options.__dict__}
 
     module = backend.make_ttir(module, metadata, options)

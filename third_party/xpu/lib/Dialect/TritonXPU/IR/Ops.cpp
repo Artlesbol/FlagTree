@@ -325,7 +325,8 @@ LogicalResult DistributedBarrierOp::verify() {
     return emitOpError("barrierIndex must be non-negative");
   auto order = getOrderAttr().getInt();
   if (order < 0 || order > 3)
-    return emitOpError("order must be relaxed (0), acquire (1), release (2), or acq_rel (3)");
+    return emitOpError(
+        "order must be relaxed (0), acquire (1), release (2), or acq_rel (3)");
   return success();
 }
 
@@ -339,7 +340,8 @@ LogicalResult RemotePointerOp::verify() {
   unsigned bitWidth = pointee.getIntOrFloatBitWidth();
   if (bitWidth < 8 || bitWidth % 8 ||
       getElementBytesAttr().getInt() != bitWidth / 8)
-    return emitOpError("elementBytes must match the byte-addressable result pointee");
+    return emitOpError(
+        "elementBytes must match the byte-addressable result pointee");
   return success();
 }
 

@@ -8,7 +8,6 @@ import triton.experimental.tle.language as tle
 
 from triton.backends.xpu.tle_supported import TLE_SUPPORTED_PRIMITIVES
 
-
 pytestmark = pytest.mark.skipif(
     "remote" not in TLE_SUPPORTED_PRIMITIVES,
     reason="XPU TLE remote pointer lowering has not been enabled",

@@ -14,9 +14,9 @@ struct DistributedBarrierOpConversion
     : public ConvertOpToLLVMPattern<triton::xpu::DistributedBarrierOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
-  LogicalResult matchAndRewrite(
-      triton::xpu::DistributedBarrierOp op, OpAdaptor adaptor,
-      ConversionPatternRewriter &rewriter) const override {
+  LogicalResult
+  matchAndRewrite(triton::xpu::DistributedBarrierOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
     StringRef symbol =
         llvm::StringSwitch<StringRef>(op.getKindAttr().getValue())
             .Case("sync", "flagcxIntraBarrierSyncS")
@@ -31,8 +31,8 @@ struct DistributedBarrierOpConversion
     auto ptrTy = LLVM::LLVMPointerType::get(ctx, /*addressSpace=*/1);
     auto i32Ty = rewriter.getI32Type();
     auto i1Ty = rewriter.getI1Type();
-    auto fnTy = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), {ptrTy, i32Ty, i32Ty, i1Ty, i32Ty});
+    auto fnTy = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
+                                            {ptrTy, i32Ty, i32Ty, i1Ty, i32Ty});
     auto mod = op->getParentOfType<ModuleOp>();
     auto func = mod.lookupSymbol<LLVM::LLVMFuncOp>(symbol);
     if (!func) {
@@ -40,14 +40,16 @@ struct DistributedBarrierOpConversion
       rewriter.setInsertionPointToStart(mod.getBody());
       func = rewriter.create<LLVM::LLVMFuncOp>(loc, symbol, fnTy);
     } else if (func.getFunctionType() != fnTy) {
-      return rewriter.notifyMatchFailure(op, "FlagCX barrier signature mismatch");
+      return rewriter.notifyMatchFailure(op,
+                                         "FlagCX barrier signature mismatch");
     }
 
     auto constant = [&](Type ty, int32_t value) -> Value {
       return rewriter.create<LLVM::ConstantOp>(
           loc, ty, rewriter.getIntegerAttr(ty, value));
     };
-    Value comm = rewriter.create<LLVM::IntToPtrOp>(loc, ptrTy, adaptor.getComm());
+    Value comm =
+        rewriter.create<LLVM::IntToPtrOp>(loc, ptrTy, adaptor.getComm());
     Value coopKind = constant(i32Ty, op.getCoopKindAttr().getInt());
     Value barrierIndex = constant(i32Ty, op.getBarrierIndexAttr().getInt());
     Value multimem = constant(i1Ty, 0);

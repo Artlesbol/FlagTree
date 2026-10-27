@@ -5,9 +5,10 @@
 
 namespace mlir::triton::xpu {
 
-inline void populateDistributedBarrierOpToLLVMPatterns(
-    LLVMTypeConverter &typeConverter, RewritePatternSet &patterns,
-    PatternBenefit benefit) {
+inline void
+populateDistributedBarrierOpToLLVMPatterns(LLVMTypeConverter &typeConverter,
+                                           RewritePatternSet &patterns,
+                                           PatternBenefit benefit) {
   populateDeviceIntraBarrierOpToLLVMPatterns(typeConverter, patterns, benefit);
 }
 

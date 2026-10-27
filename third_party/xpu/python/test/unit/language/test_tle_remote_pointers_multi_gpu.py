@@ -10,9 +10,7 @@ import triton.experimental.tle.language as tle
 
 from triton.backends.xpu.tle_supported import TLE_SUPPORTED_PRIMITIVES
 
-
-_HAS_COMMUNICATOR = all(hasattr(tle, name) for name in ("get_mem_pool", "create_dist_tensor",
-                                                    "cleanup_communicator"))
+_HAS_COMMUNICATOR = all(hasattr(tle, name) for name in ("get_mem_pool", "create_dist_tensor", "cleanup_communicator"))
 pytestmark = [
     pytest.mark.skipif(int(os.environ.get("WORLD_SIZE", "1")) != 2, reason="needs two devices under torchrun"),
     pytest.mark.skipif("remote" not in TLE_SUPPORTED_PRIMITIVES or not _HAS_COMMUNICATOR,

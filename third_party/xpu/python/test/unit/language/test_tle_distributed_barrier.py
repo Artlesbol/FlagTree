@@ -7,7 +7,6 @@ import triton.experimental.tle.language as tle
 
 from triton.backends.xpu.tle_supported import TLE_SUPPORTED_PRIMITIVES
 
-
 pytestmark = pytest.mark.skipif("distributed_barrier" not in TLE_SUPPORTED_PRIMITIVES,
                                 reason="XPU FlagCX device bitcode is not available")
 
@@ -20,8 +19,7 @@ def _barrier(out, comm, mesh: tl.constexpr, kind: tl.constexpr):
     tl.store(out, 1)
 
 
-@pytest.mark.parametrize("kind,symbol", [("sync", "flagcxIntraBarrierSyncS"),
-                                         ("arrive", "flagcxIntraBarrierArriveS"),
+@pytest.mark.parametrize("kind,symbol", [("sync", "flagcxIntraBarrierSyncS"), ("arrive", "flagcxIntraBarrierArriveS"),
                                          ("wait", "flagcxIntraBarrierWaitS")])
 def test_device_barrier_uses_xputle_and_flagcx(kind, symbol):
     source = triton.compiler.ASTSource(

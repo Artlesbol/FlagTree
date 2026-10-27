@@ -15,8 +15,9 @@ def flagcx_packages_detector() -> bool:
         from . import flagcx_wrapper
     except (ImportError, OSError):
         return False
-    return all(hasattr(flagcx_wrapper, name) for name in
-               ("FLAGCXLibrary", "flagcxDevCommRequirements", "flagcxUniqueId", "FLAGCX_WIN_COLL_SYMMETRIC"))
+    return all(
+        hasattr(flagcx_wrapper, name)
+        for name in ("FLAGCXLibrary", "flagcxDevCommRequirements", "flagcxUniqueId", "FLAGCX_WIN_COLL_SYMMETRIC"))
 
 
 class FlagcxRuntimeConfig:
@@ -48,21 +49,19 @@ class FlagcxRuntimeConfig:
             return directory / name if directory else None
 
         self.bitcode_path = self._first_existing(
-            (os.environ.get("FLAGCX_BITCODE_PATH"), in_dir(module_dir, self.bt_name),
-             backend_dir / "lib" / self.bt_name,
-             wheel_dir / "lib" / self.bt_name if wheel_dir else None,
-             cache_dir / self.bt_name), path_order, file=True)
+            (os.environ.get("FLAGCX_BITCODE_PATH"), in_dir(module_dir, self.bt_name), backend_dir / "lib" /
+             self.bt_name, wheel_dir / "lib" / self.bt_name if wheel_dir else None, cache_dir / self.bt_name),
+            path_order, file=True)
         self.shared_lib_path = self._first_existing(
-            (os.environ.get("FLAGCX_LIB_PATH"), in_dir(module_dir, self.shared_name),
-             backend_dir / "lib" / self.shared_name,
-             wheel_dir / "lib" / self.shared_name if wheel_dir else None,
-             cache_dir / self.shared_name), path_order, file=True,
-            name=self.shared_name)
+            (os.environ.get("FLAGCX_LIB_PATH"), in_dir(module_dir,
+                                                       self.shared_name), backend_dir / "lib" / self.shared_name,
+             wheel_dir / "lib" / self.shared_name if wheel_dir else None, cache_dir / self.shared_name), path_order,
+            file=True, name=self.shared_name)
         self.include_path = self._first_existing(
-            (os.environ.get("FLAGCX_INCLUDE_PATH"), in_dir(module_dir, self.include_name),
-             triton_dir / "experimental" / "tle" / "language" / "include",
-             wheel_dir / "lib" / self.include_name if wheel_dir else None,
-             cache_dir / self.include_name), path_order, file=False)
+            (os.environ.get("FLAGCX_INCLUDE_PATH"), in_dir(
+                module_dir, self.include_name), triton_dir / "experimental" / "tle" / "language" / "include",
+             wheel_dir / "lib" / self.include_name if wheel_dir else None, cache_dir / self.include_name), path_order,
+            file=False)
         self.host_files_available = bool(self.shared_lib_path and self.include_path and flagcx_packages_detector())
         self.is_available = bool(self.bitcode_path and self.host_files_available)
 
@@ -137,8 +136,7 @@ def link_flagcx_device_ir(kernel_ir: str, bitcode_path: str) -> str:
     configured_tool = os.environ.get("FLAGCX_XPU_LLVM_LINK")
     xtdk_home = os.environ.get("XTDK_HOME")
     clang_path = os.environ.get("FLAGCX_XPU_CLANG")
-    candidates = (staged_tool,
-                  Path(xtdk_home) / "bin" / "llvm-link" if xtdk_home else None,
+    candidates = (staged_tool, Path(xtdk_home) / "bin" / "llvm-link" if xtdk_home else None,
                   Path(clang_path).expanduser().parent / "llvm-link" if clang_path else None,
                   shutil.which("llvm-link-19"))
     tool = configured_tool or next((str(path) for path in candidates if path and Path(path).is_file()), None)
@@ -153,8 +151,8 @@ def link_flagcx_device_ir(kernel_ir: str, bitcode_path: str) -> str:
         source = Path(directory) / "kernel.ll"
         linked = Path(directory) / "linked.ll"
         source.write_text(kernel_ir)
-        result = subprocess.run([str(tool), "-S", str(source), bitcode_path, "-o", str(linked)],
-                                capture_output=True, text=True, env=llvm19_toolchain.llvm19_env("xpu"))
+        result = subprocess.run([str(tool), "-S", str(source), bitcode_path, "-o",
+                                 str(linked)], capture_output=True, text=True, env=llvm19_toolchain.llvm19_env("xpu"))
         if result.returncode:
             raise RuntimeError(f"Failed to link XPU FlagCX device bitcode {bitcode_path}: {result.stderr.strip()}")
         linked_ir = linked.read_text()
@@ -166,8 +164,10 @@ def link_flagcx_device_ir(kernel_ir: str, bitcode_path: str) -> str:
             "flagcxIntraBarrierWaitS": ("ptr addrspace(1)", "i32", "i32", "i1", "i32"),
             "flagcxIntraBarrierSyncS": ("ptr addrspace(1)", "i32", "i32", "i1", "i32"),
         }
-        symbols = set(re.findall(r"@(flagcx(?:DevCommGetIntra(?:Rank|Size)|IntraBarrier(?:Sync|Arrive|Wait)S|GetIntraPointerC))\(",
-                                 kernel_ir))
+        symbols = set(
+            re.findall(
+                r"@(flagcx(?:DevCommGetIntra(?:Rank|Size)|IntraBarrier(?:Sync|Arrive|Wait)S|GetIntraPointerC))\(",
+                kernel_ir))
         for symbol in symbols:
             definition = re.search(rf"(?m)^define\b[^\n]*@{re.escape(symbol)}\(", linked_ir)
             if not definition:
@@ -181,9 +181,8 @@ def link_flagcx_device_ir(kernel_ir: str, bitcode_path: str) -> str:
                 depth += (char == "(") - (char == ")")
             actual = "".join(params).split(",")
             expected = signatures[symbol]
-            if len(actual) != len(expected) or any(
-                    not re.match(r"^\s*" + re.escape(ty) + r"(?:\s|$)", param)
-                    for param, ty in zip(actual, expected)):
+            if len(actual) != len(expected) or any(not re.match(r"^\s*" + re.escape(ty) + r"(?:\s|$)", param)
+                                                   for param, ty in zip(actual, expected)):
                 raise RuntimeError(f"XPU FlagCX device bitcode {bitcode_path} has an incompatible {symbol} ABI")
             if symbol == "flagcxGetIntraPointerC" and "ptr addrspace(1)" not in definition.group(0).split("@")[0]:
                 raise RuntimeError(f"XPU FlagCX device bitcode {bitcode_path} has an incompatible {symbol} return type")

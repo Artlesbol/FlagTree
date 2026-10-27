@@ -1,8 +1,8 @@
 #include "triton/Conversion/TritonXPUToLLVM/FlagCxOpToLLVM/FlagCxOpToLLVM.h"
 
 #include "triton/Conversion/TritonXPUToLLVM/FlagCxOpToLLVM/DeviceIntraBarrierOpToLLVM.h"
-#include "triton/Conversion/TritonXPUToLLVM/GetDeviceIdToFlagCX.h"
 #include "triton/Conversion/TritonXPUToLLVM/FlagCxOpToLLVM/GetLocalRankOpToLLVM.h"
+#include "triton/Conversion/TritonXPUToLLVM/GetDeviceIdToFlagCX.h"
 
 namespace mlir::triton::xpu {
 

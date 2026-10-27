@@ -35,7 +35,8 @@ struct FlagCXCommQueryConversion : public ConvertOpToLLVMPattern<Op> {
       return rewriter.notifyMatchFailure(
           op, "FlagCX device function has an incompatible signature");
     }
-    Value comm = rewriter.create<LLVM::IntToPtrOp>(loc, ptrTy, adaptor.getComm());
+    Value comm =
+        rewriter.create<LLVM::IntToPtrOp>(loc, ptrTy, adaptor.getComm());
     auto result = rewriter.create<LLVM::CallOp>(loc, func, ValueRange{comm});
     rewriter.replaceOp(op, result.getResult());
     return success();

@@ -13,9 +13,9 @@ struct GetDeviceIdOpConversion
     : public ConvertOpToLLVMPattern<triton::xpu::GetDeviceIdOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
-  LogicalResult matchAndRewrite(
-      triton::xpu::GetDeviceIdOp op, OpAdaptor adaptor,
-      ConversionPatternRewriter &rewriter) const override {
+  LogicalResult
+  matchAndRewrite(triton::xpu::GetDeviceIdOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
     Value comm = adaptor.getComm();
     if (!comm) {
       auto module = op->getParentOfType<ModuleOp>();
@@ -23,7 +23,8 @@ struct GetDeviceIdOpConversion
       if (!module || !module->hasAttr("xpu.implicit_distributed_params") ||
           !func || func.getNumArguments() < 2)
         return op.emitOpError(
-            "implicit device rank requires FLAGTREE_LITE_DIST and a registered FlagCX context");
+            "implicit device rank requires FLAGTREE_LITE_DIST and a registered "
+            "FlagCX context");
       comm = func.getArgument(0);
     }
     auto rank = rewriter.create<triton::xpu::GetLocalRankOp>(
@@ -33,7 +34,7 @@ struct GetDeviceIdOpConversion
   }
 };
 
-}
+} // namespace
 
 void mlir::triton::xpu::populateGetDeviceIdOpToFlagCXPatterns(
     LLVMTypeConverter &typeConverter, RewritePatternSet &patterns,

@@ -59,6 +59,19 @@ for impl in triton aiv; do
 done
 ```
 
+For a separate 40-block comparison, enable the existing compiler auto-blockify
+option and compile a fresh kernel; use the persistent native reference alongside
+it. Do not change this option while replaying an archived binary compiled with a
+different dispatch contract.
+
+```bash
+TRITON_ALL_BLOCKS_PARALLEL=1 TRITON_ALWAYS_COMPILE=1 python "$bench/bench.py" \
+  --impl triton --case nested --q 256 --output "$out/triton40-nested-q256.json"
+python "$bench/bench.py" --impl aiv --case nested --q 256 --aiv-blocks 40 \
+  --library "$out/aiv-build/libpermute_reference.so" \
+  --output "$out/aiv40-nested-q256.json"
+```
+
 `--aiv-blocks 2048` matches the Triton logical grid. The default AIV grid is a
 persistent 40-block loop; report that separately. Use `--dtype float16`,
 `bfloat16`, `int16`, or `int32` for the other word types. `--dump-dir` saves the
@@ -92,7 +105,13 @@ static transposes use vector index arithmetic and a private UB permutation
 primitive; large transposes retain native tiling. These are static permutations,
 not dynamic `tl.gather` operations.
 
-In the packed path, floating-point joins move values as same-width integers so concat/copy cannot
+Before dialect conversion, the pass proves single-use dense unmasked loads and
+contiguous terminal stores. A simple rank-two split or rank-one word join meeting
+that proof retains CANN's native load/store-folding path. Transposed, computed,
+masked and shared inputs do not qualify. This is a graph property, not a
+benchmark-name or size-specific admission rule.
+
+In the packed and proven dense native paths, floating-point joins move values as same-width integers so concat/copy cannot
 canonicalize NaN payloads. The c220 vector path is enabled for Ascend 910B targets;
 other architectures and encoded join layouts retain the existing lowering.
 
@@ -118,3 +137,8 @@ one-element copies normalize irrelevant strides to one, avoiding a separate
 strided-byte-load failure without adding scalar data loops. This suite verifies the listed cases and does
 not establish correctness or performance for every Triton operation/dtype or
 other CANN/SoC versions.
+
+Set `FLAGTREE_PERMUTE_DUMP_DIR` to retain the private operations immediately before
+and after late ABI lowering. These artifacts expose actual UB descriptors and
+synchronization, so the packed vector-path claim can be checked against the
+physical strides rather than inferred from source tensor shapes.

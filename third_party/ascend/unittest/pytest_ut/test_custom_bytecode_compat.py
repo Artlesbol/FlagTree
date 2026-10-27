@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import importlib
 
 import pytest
+import torch_npu  # registers torch.npu for the suite's device fixture
 
 compiler = importlib.import_module("triton.backends.ascend.compiler")
 

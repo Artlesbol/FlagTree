@@ -26,6 +26,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -433,7 +434,9 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     # Parse all bitcode paths
     bitcodes = re.findall(BITCODES_REGEX, linalg)
     metadata["bitcodes"] = [val for group in bitcodes for val in group if val]
-    if any(name in linalg for name in ("custom_flagtree_stride_gather_", "custom_flagtree_split_")):
+    metadata["uses_structured_permutation"] = any(
+        name in linalg for name in ("custom_flagtree_stride_gather_", "custom_flagtree_split_"))
+    if metadata["uses_structured_permutation"]:
         # This is a compiler-generated primitive; callers need not import TLE
         # or annotate kernels with a bitcode path. The Ascend build produces
         # this package resource together with the backend.
@@ -443,6 +446,27 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
         if str(bitcode) not in metadata["bitcodes"]:
             metadata["bitcodes"].append(str(bitcode))
     return linalg, metadata
+
+
+def _configure_structured_permutation_compiler(metadata, compiler, env, tmpdir):
+    if not metadata.get("uses_structured_permutation"):
+        return env
+    import shutil
+    real = Path(compiler).resolve().with_name("hivmc")
+    if not real.is_file():
+        real = Path(shutil.which("hivmc", path=env.get("PATH")))
+    tool, _ = _get_bishengir_opt_path()
+    script = Path(__file__).with_name("structured_permute_hivmc.py")
+    launcher = Path(tmpdir) / "hivmc"
+    launcher.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable) + " " +
+                        shlex.quote(str(script)) + ' "$@"\n')
+    launcher.chmod(0o700)
+    env = env.copy()
+    env["FLAGTREE_REAL_HIVMC"] = str(real)
+    env["FLAGTREE_CANN_OPT"] = tool
+    env["FLAGTREE_ORIGINAL_BISHENG_INSTALL_PATH"] = env.get("BISHENG_INSTALL_PATH", "")
+    env["BISHENG_INSTALL_PATH"] = tmpdir
+    return env
 
 
 def _parse_ttir_metadata(ttir: str, metadata: dict):
@@ -665,6 +689,7 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
                 _compile_option_list += ["--enable-auto-blockify-loop"]
 
         npu_compiler_path, env = _get_npucompiler_path()
+        env = _configure_structured_permutation_compiler(metadata, npu_compiler_path, env, tmpdir)
         if npu_compiler_path.endswith("bishengir-compile"):
             _compile_option_list += [
                 "--enable-hfusion-compile=true",
@@ -918,6 +943,7 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
         if _is_auto_map_parallel_blocks_enabled():
             _compile_option_list += ["--enable-auto-blockify-loop"]
         npu_compiler_path, env = _get_npucompiler_path()
+        env = _configure_structured_permutation_compiler(metadata, npu_compiler_path, env, tmpdir)
         if npu_compiler_path.endswith("bishengir-compile"):
             _compile_option_list += [
                 "--enable-hfusion-compile=true",

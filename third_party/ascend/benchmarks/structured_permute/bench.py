@@ -67,7 +67,11 @@ def main():
     p.add_argument("--warmup", type=int, default=10)
     p.add_argument("--iters", type=int, default=100)
     p.add_argument("--rounds", type=int, default=5)
+    p.add_argument("--aiv-blocks", type=int, default=0,
+                   help="0: persistent 40-block reference; use batch for matching logical grid")
     args = p.parse_args()
+    if args.batch < 1 or args.aiv_blocks < 0:
+        p.error("batch must be positive and aiv-blocks nonnegative")
     if args.q < 32 or args.q > 4096 or args.q & (args.q - 1):
         p.error("Q must be a power of two in [32,4096]")
     if args.warmup < 3 or args.iters < 30 or args.rounds < 3:
@@ -94,8 +98,9 @@ def main():
             idx = ((i // 4) + (i % 4) * q).to(torch.int32) * 4
         idx = idx.npu()
         stream = torch.npu.current_stream().npu_stream
+        blocks = args.aiv_blocks or min(batch, 40)
         def launch():
-            rc = call(min(batch, 40), stream, x.data_ptr(), z.data_ptr(), y.data_ptr(),
+            rc = call(blocks, stream, x.data_ptr(), z.data_ptr(), y.data_ptr(),
                       idx.data_ptr(), t.data_ptr(), j.data_ptr(), q, batch,
                       {"split": 0, "join": 1, "nested": 2}[args.case])
             if rc:
@@ -107,7 +112,7 @@ def main():
         kernel = split_kernel if args.case == "split" else join_kernel
         def launch():
             return kernel[(batch,)](x, z, y, Q=q)
-    launch()
+    compiled = launch()
     torch.npu.synchronize()
     if args.case == "split":
         expected = xcpu.reshape(batch, q, 2).transpose(1, 2).reshape(batch, 2*q)
@@ -143,6 +148,8 @@ def main():
     result.update(status="pass", kernel_us=statistics.median(times), rounds_us=times,
                   us_per_row=statistics.median(times)/batch, triton=triton.__version__,
                   cache=os.environ.get("TRITON_CACHE_DIR"), timing="device_graph_events",
+                  logical_grid=blocks if args.impl == "aiv" else batch,
+                  compiler_metadata=compiled.metadata._asdict() if args.impl == "triton" else None,
                   aiv_join="vector_gather_including_index_load")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, default=str) + "\n")

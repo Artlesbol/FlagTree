@@ -177,10 +177,21 @@ def main():
         end.synchronize()
         times.append(start.elapsed_time(end) * 1000 / (args.iters * args.graph_steps))
     result = vars(args).copy()
+    launch_blocks = blocks if args.impl == "aiv" else batch
+    if args.impl == "triton":
+        from triton.backends.ascend.driver import NPUUtils
+        from triton.backends.ascend.utils import _is_auto_map_parallel_blocks_enabled
+        automatic = getattr(compiled.metadata, "enable_auto_blockify", None)
+        if automatic is None:
+            automatic = _is_auto_map_parallel_blocks_enabled()
+        if automatic:
+            launch_blocks = min(batch, NPUUtils().get_aivector_core_num())
     result.update(status="pass", kernel_us=statistics.median(times), rounds_us=times,
                   us_per_row=statistics.median(times)/batch, triton=triton.__version__,
                   cache=os.environ.get("TRITON_CACHE_DIR"), timing="device_graph_events_amortized",
                   logical_grid=blocks if args.impl == "aiv" else batch,
+                  launch_blocks=launch_blocks,
+                  auto_blockify_env=os.environ.get("TRITON_ALL_BLOCKS_PARALLEL"),
                   replay_outputs_verified=True,
                   capture_stream_changed=capture_stream != initial_stream,
                   compiler_metadata=compiled.metadata._asdict() if args.impl == "triton" else None,

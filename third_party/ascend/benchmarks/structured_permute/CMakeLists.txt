@@ -17,7 +17,7 @@ if(FLAGTREE_DEVICE_BITCODE)
   endif()
   ascendc_library(ub_contract_device STATIC ub_contract.cpp)
   ascendc_compile_options(ub_contract_device PRIVATE
-    -Xclang -mlink-builtin-bitcode -Xclang "${FLAGTREE_DEVICE_BITCODE}"
+    "SHELL:-Xclang -mlink-builtin-bitcode -Xclang ${FLAGTREE_DEVICE_BITCODE}"
     --cce-auto-sync=off)
   add_library(ub_contract_reference SHARED ub_contract_launch.cpp)
   target_link_libraries(ub_contract_reference PRIVATE ub_contract_device)

@@ -27,7 +27,7 @@ def _layout(X, Z, Y, AOUT, BOUT, TOUT, JOUT,
     tl.store(JOUT + i, tl.reshape(other, (2 * A * B,)))
 
 
-@pytest.mark.parametrize("shape", [(1, 1), (2, 4), (4, 2), (4, 8), (8, 32)])
+@pytest.mark.parametrize("shape", [(1, 1), (2, 4), (4, 2), (4, 8), (8, 32), (1, 2), (2, 1)])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32,
                                     torch.int16, torch.int32, torch.int8])
 @pytest.mark.parametrize("swap,strides", [(False, (1, 1)), (True, (3, 2))])
@@ -95,3 +95,55 @@ def test_permutation_bit_patterns(shape, order, dtype):
     _permute_bits[(1,)](x, y, SHAPE=shape, ORDER=order, N=n)
     expected = raw.reshape(shape).permute(order).contiguous().reshape(-1)
     assert torch.equal(y.cpu().view(bits_dtype), expected)
+
+
+@triton.jit
+def _computed_split(X, Y, SIDE, N: tl.constexpr, XS: tl.constexpr,
+                    YS: tl.constexpr, VALID: tl.constexpr):
+    i = tl.arange(0, 2 * N)
+    v = tl.load(X + i * XS, i < VALID, other=0)
+    v = v + 1
+    tl.store(SIDE + i, v)
+    a, b = tl.split(tl.reshape(v, (N, 2)))
+    j = tl.arange(0, N)
+    tl.store(Y + j * YS, a)
+    tl.store(Y + (N + j) * YS, b)
+
+
+@pytest.mark.parametrize("n", [1, 8, 128])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32,
+                                    torch.int8, torch.int16, torch.int32])
+@pytest.mark.parametrize("xs,ys", [(1, 1), (3, 2)])
+def test_computed_masked_split(n, dtype, xs, ys):
+    valid = max(1, 2*n-3)
+    x = torch.arange(valid*xs+2, dtype=torch.int32).remainder(97).to(dtype).npu()[1:1+valid*xs:xs]
+    storage = torch.full((2*n*ys+2,), -111, dtype=dtype, device="npu")
+    y = storage[1:1+2*n*ys:ys]
+    side = torch.empty(2*n, dtype=dtype, device="npu")
+    _computed_split[(1,)](x, y, side, N=n, XS=xs, YS=ys, VALID=valid)
+    ref = torch.zeros(2*n, dtype=dtype)
+    ref[:valid] = x.cpu()
+    ref += 1
+    expected = ref.reshape(n, 2).T.contiguous().reshape(-1)
+    assert torch.equal(side.cpu(), ref)
+    assert torch.equal(y.cpu(), expected)
+    guard = torch.ones(2*n*ys+2, dtype=torch.bool)
+    guard[1:1+2*n*ys:ys] = False
+    assert torch.all(storage.cpu()[guard] == -111)
+
+
+@triton.jit
+def _constant_split(Y, N: tl.constexpr):
+    v = tl.full((N, 2), 3, Y.dtype.element_ty)
+    a, b = tl.split(v)
+    i = tl.arange(0, N)
+    tl.store(Y+i, a)
+    tl.store(Y+N+i, b)
+
+
+@pytest.mark.parametrize("n", [1, 8])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32, torch.int8])
+def test_constant_split(n, dtype):
+    y = torch.empty(2*n, dtype=dtype, device="npu")
+    _constant_split[(1,)](y, N=n)
+    assert torch.all(y.cpu() == 3)

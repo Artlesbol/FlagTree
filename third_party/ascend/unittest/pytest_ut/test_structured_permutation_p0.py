@@ -1,0 +1,130 @@
+"""Admission, tail, launch-boundary and buffer-reuse regressions.
+
+Run this entire file in separate processes with TRITON_ALL_BLOCKS_PARALLEL=0/1.
+All host references use logical elements; guard checks include storage holes.
+"""
+import pytest
+import torch
+import torch_npu
+import triton
+import triton.language as tl
+
+
+@triton.jit
+def _batched_channel(X, Y, SIDE, Q: tl.constexpr, VALID: tl.constexpr,
+                     XS: tl.constexpr, YS: tl.constexpr, CASE: tl.constexpr):
+    row = tl.program_id(0)
+    i = tl.arange(0, 2 * Q)
+    value = (tl.load(X + (row * 2 * Q + i) * XS, i < VALID, other=0) + 1).to(X.dtype.element_ty)
+    tl.store(SIDE + row * 2 * Q + i, value)
+    a, b = tl.split(tl.reshape(value, (Q, 2)))
+    j = tl.arange(0, Q)
+    if CASE == 0:
+        tl.store(Y + (row * 2 * Q + j) * YS, a)
+    elif CASE == 1:
+        tl.store(Y + (row * 2 * Q + j) * YS, b)
+    else:
+        joined = tl.reshape(tl.join(b, a), (2 * Q,))
+        tl.store(Y + (row * 2 * Q + i) * YS, joined)
+
+
+@pytest.mark.parametrize('batch', [1, 39, 40, 41, 2047, 2049])
+@pytest.mark.parametrize('dtype', [torch.float16, torch.float32])
+@pytest.mark.parametrize('case', [0, 1, 2])
+def test_launch_boundaries_and_single_result(batch, dtype, case):
+    q, valid, xs, ys = 16, 31, 3, 2
+    n = batch * 2 * q
+    cpu = (torch.arange(n * xs + 2, dtype=torch.int32).remainder(97) - 48).to(dtype)
+    x = cpu.npu()[1:]
+    storage = torch.full((n * ys + 2,), -111, dtype=dtype, device='npu')
+    side = torch.empty(n, dtype=dtype, device='npu')
+    _batched_channel[(batch,)](x, storage[1:], side, Q=q, VALID=valid, XS=xs, YS=ys, CASE=case)
+    ref = cpu[1:1+n*xs:xs].reshape(batch, 2*q).clone()
+    ref[:, valid:] = 0
+    ref += 1
+    assert torch.equal(side.cpu(), ref.reshape(-1))
+    expected = torch.full((batch, 2*q), -111, dtype=dtype)
+    if case < 2:
+        expected[:, :q] = ref[:, case::2]
+    else:
+        expected = ref.reshape(batch, q, 2).flip(-1).reshape(batch, 2*q)
+    assert torch.equal(storage.cpu()[1:1+n*ys:ys], expected.reshape(-1))
+    guard = torch.ones(storage.numel(), dtype=torch.bool)
+    guard[1:1+n*ys:ys] = False
+    assert torch.all(storage.cpu()[guard] == -111)
+
+
+@triton.jit
+def _join_admission(X, Z, Y, SIDE, Q: tl.constexpr, ROUTE: tl.constexpr,
+                    XS: tl.constexpr, YS: tl.constexpr):
+    i = tl.arange(0, Q)
+    if ROUTE == 'mask':
+        a = tl.load(X + i * XS, i < Q-1, other=0)
+        b = tl.load(Z + i, i < Q-3, other=0)
+    else:
+        a = tl.load(X + i * XS)
+        b = tl.load(Z + i)
+    if ROUTE == 'computed':
+        a = (a + 1).to(X.dtype.element_ty)
+        b = (b - 1).to(Z.dtype.element_ty)
+    if ROUTE == 'shared':
+        tl.store(SIDE + i, a)
+    y = tl.reshape(tl.join(a, b), (2*Q,))
+    tl.store(Y + tl.arange(0, 2*Q) * YS, y)
+
+
+@pytest.mark.parametrize('route', ['dense', 'computed', 'shared', 'mask', 'xstride', 'ystride'])
+@pytest.mark.parametrize('dtype', [torch.float16, torch.bfloat16, torch.float32])
+def test_dense_native_admission(route, dtype):
+    q = 32
+    xs, ys = (3 if route == 'xstride' else 1), (2 if route == 'ystride' else 1)
+    cpu = torch.arange(q*xs+2, dtype=torch.int32).remainder(37).to(dtype)
+    zcpu = torch.arange(q, dtype=torch.int32).flip(0).remainder(29).to(dtype)
+    x, z = cpu.npu()[1:], zcpu.npu()
+    storage = torch.full((2*q*ys+2,), -111, dtype=dtype, device='npu')
+    side = torch.full((q,), -111, dtype=dtype, device='npu')
+    kernel = _join_admission[(1,)](x, z, storage[1:], side, Q=q, ROUTE=route, XS=xs, YS=ys)
+    a, b = cpu[1:1+q*xs:xs].clone(), zcpu.clone()
+    if route == 'mask':
+        a[-1:] = 0
+        b[-3:] = 0
+    elif route == 'computed':
+        a += 1
+        b -= 1
+    assert torch.equal(storage.cpu()[1:1+2*q*ys:ys], torch.stack((a, b), -1).reshape(-1))
+    assert torch.equal(side.cpu(), a if route == 'shared' else torch.full_like(a, -111))
+    guard = torch.ones(storage.numel(), dtype=torch.bool)
+    guard[1:1+2*q*ys:ys] = False
+    assert torch.all(storage.cpu()[guard] == -111)
+    assert kernel.metadata.uses_structured_permutation == (route != 'dense')
+
+
+@pytest.mark.parametrize('q', [1, 2, 4, 8, 16, 1024, 2048, 4096])
+@pytest.mark.parametrize('dtype', [torch.float32, torch.int8])
+def test_join_resource_and_block_boundaries(q, dtype):
+    cpu = torch.arange(q+2, dtype=torch.int32).remainder(71).to(dtype)
+    zcpu = torch.arange(q, dtype=torch.int32).remainder(53).to(dtype)
+    x, z = cpu.npu()[1:], zcpu.npu()
+    out = torch.full((2*q+2,), -111, dtype=dtype, device='npu')
+    side = torch.full((q,), -111, dtype=dtype, device='npu')
+    kernel = _join_admission[(1,)](x, z, out[1:], side, Q=q, ROUTE='computed', XS=1, YS=1)
+    expected = torch.stack((cpu[1:1+q]+1, zcpu-1), -1).reshape(-1)
+    assert torch.equal(out.cpu()[1:-1], expected)
+    assert out.cpu()[[0, -1]].tolist() == [-111, -111]
+    if q > 2048:
+        assert not kernel.metadata.uses_structured_permutation
+
+
+@pytest.mark.parametrize('valid', [0, 1, 7, 8, 9, 15, 16, 17, 31, 32])
+def test_masked_logical_byte_boundaries(valid):
+    q = 16
+    cpu = torch.arange(2*q, dtype=torch.int32).to(torch.int8)
+    x = cpu.npu()
+    out = torch.full((2*q,), -111, dtype=torch.int8, device='npu')
+    side = torch.empty_like(out)
+    _batched_channel[(1,)](x, out, side, Q=q, VALID=valid, XS=1, YS=1, CASE=2)
+    ref = cpu.clone()
+    ref[valid:] = 0
+    ref += 1
+    assert torch.equal(out.cpu(), ref.reshape(q, 2).flip(-1).reshape(-1))
+    assert torch.equal(side.cpu(), ref)

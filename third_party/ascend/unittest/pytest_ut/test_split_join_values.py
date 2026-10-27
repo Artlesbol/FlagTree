@@ -75,8 +75,10 @@ def test_split_join_preserves_float_bits(dtype, xs, ys):
                 ref.permute(0, 2, 1).contiguous().reshape(-1),
                 torch.stack((ra, zraw.reshape(a, b)), dim=-1).reshape(-1)]
     actual = [out_raw.cpu()[1:1+n*ys:ys]] + [v.cpu() for v in (a_raw, b_raw, t_raw, j_raw)]
-    for name, value, bits in zip(('join', 'split0', 'split1', 'transpose', 'independent_join'), actual, expected):
-        assert torch.equal(value, bits), (name, value, bits)
+    failures = [(name, value, bits) for name, value, bits in
+                zip(('join', 'split0', 'split1', 'transpose', 'independent_join'), actual, expected)
+                if not torch.equal(value, bits)]
+    assert not failures, failures
     guards = torch.ones(n*ys+2, dtype=torch.bool)
     guards[1:1+n*ys:ys] = False
     assert torch.all(out_raw.cpu()[guards] == 0)

@@ -62,6 +62,7 @@ def main():
     p.add_argument("--case", choices=["split", "join", "nested"], required=True)
     p.add_argument("--q", type=int, default=256)
     p.add_argument("--batch", type=int, default=2048)
+    p.add_argument("--dtype", choices=["float32", "float16", "bfloat16", "int16", "int32"], default="float32")
     p.add_argument("--library", type=Path)
     p.add_argument("--dump-dir", type=Path,
                    help="save compiler artifacts before timing")
@@ -82,29 +83,30 @@ def main():
     torch.manual_seed(20261027)
     q, batch = args.q, args.batch
     width = (4 if args.case == "nested" else 2) * q
-    xcpu = torch.randn(batch, width)
-    zcpu = torch.randn(batch, q)
+    dtype = getattr(torch, args.dtype)
+    xcpu = torch.randn(batch, width).to(dtype) if dtype.is_floating_point else torch.randint(-100, 100, (batch, width), dtype=dtype)
+    zcpu = torch.randn(batch, q).to(dtype) if dtype.is_floating_point else torch.randint(-100, 100, (batch, q), dtype=dtype)
     x, z = xcpu.npu(), zcpu.npu()
-    y = torch.full((batch, width), float("nan"), device="npu")
+    y = torch.full((batch, width), float("nan") if dtype.is_floating_point else -111, device="npu", dtype=dtype)
     t, j = torch.empty_like(y), torch.empty_like(y)
     if args.impl == "aiv":
         if not args.library or (args.case == "nested" and q > 1024):
             p.error("AIV reference needs --library; nested requires Q<=1024")
         lib = ctypes.CDLL(str(args.library.resolve()))
         call = lib.launch_permute
-        call.argtypes = [ctypes.c_uint32, ctypes.c_void_p] + [ctypes.c_void_p] * 6 + [ctypes.c_uint32] * 3
+        call.argtypes = [ctypes.c_uint32, ctypes.c_void_p] + [ctypes.c_void_p] * 6 + [ctypes.c_uint32] * 4
         call.restype = ctypes.c_uint32
-        idx = ((torch.arange(2*q) // 2) + (torch.arange(2*q) % 2) * q).to(torch.int32) * 4
+        idx = ((torch.arange(2*q) // 2) + (torch.arange(2*q) % 2) * q).to(torch.int32) * x.element_size()
         if args.case == "nested":
             i = torch.arange(4*q)
-            idx = ((i // 4) + (i % 4) * q).to(torch.int32) * 4
+            idx = ((i // 4) + (i % 4) * q).to(torch.int32) * x.element_size()
         idx = idx.npu()
         stream = torch.npu.current_stream().npu_stream
         blocks = args.aiv_blocks or min(batch, 40)
         def launch():
             rc = call(blocks, stream, x.data_ptr(), z.data_ptr(), y.data_ptr(),
                       idx.data_ptr(), t.data_ptr(), j.data_ptr(), q, batch,
-                      {"split": 0, "join": 1, "nested": 2}[args.case])
+                      {"split": 0, "join": 1, "nested": 2}[args.case], x.element_size())
             if rc:
                 raise RuntimeError(f"AIV launch failed: {rc}")
     elif args.case == "nested":

@@ -3,26 +3,26 @@
 #include "kernel_operator.h"
 using namespace AscendC;
 
-extern "C" __global__ __aicore__ void permute_aiv(
+template <typename T>
+__aicore__ inline void permute_impl(
     GM_ADDR x, GM_ADDR z, GM_ADDR y, GM_ADDR indices, GM_ADDR t, GM_ADDR j,
     uint32_t q, uint32_t batch, uint32_t mode) {
-  KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);
   TPipe pipe;
   TBuf<TPosition::VECCALC> input, output, index;
   const uint32_t width = (mode == 2 ? 4 : 2) * q;
-  pipe.InitBuffer(input, width * sizeof(float));
-  pipe.InitBuffer(output, width * sizeof(float));
+  pipe.InitBuffer(input, width * sizeof(T));
+  pipe.InitBuffer(output, width * sizeof(T));
   pipe.InitBuffer(index, width * sizeof(uint32_t));
-  auto in = input.Get<float>();
-  auto out = output.Get<float>();
+  auto in = input.Get<T>();
+  auto out = output.Get<T>();
   auto idx = index.Get<uint32_t>();
-  GlobalTensor<float> gx, gz, gy, gt, gj;
+  GlobalTensor<T> gx, gz, gy, gt, gj;
   GlobalTensor<uint32_t> gi;
-  gx.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(x));
-  gz.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(z));
-  gy.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(y));
-  gt.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(t));
-  gj.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(j));
+  gx.SetGlobalBuffer(reinterpret_cast<__gm__ T *>(x));
+  gz.SetGlobalBuffer(reinterpret_cast<__gm__ T *>(z));
+  gy.SetGlobalBuffer(reinterpret_cast<__gm__ T *>(y));
+  gt.SetGlobalBuffer(reinterpret_cast<__gm__ T *>(t));
+  gj.SetGlobalBuffer(reinterpret_cast<__gm__ T *>(j));
   gi.SetGlobalBuffer(reinterpret_cast<__gm__ uint32_t *>(indices));
   // Join uses an immutable vector index table; its HBM read is timed too.
   // This is a reference to improve on, not a claim of hardware peak throughput.
@@ -40,9 +40,9 @@ extern "C" __global__ __aicore__ void permute_aiv(
     pipe_barrier(PIPE_ALL);
     if (mode == 0) {
       uint64_t count = 0;
-      GatherMaskParams p{1, static_cast<uint8_t>(2 * q / 64), 8, 0};
-      GatherMask(out, in, uint8_t(1), false, 0, p, count);
-      GatherMask(out[q], in, uint8_t(2), false, 0, p, count);
+      GatherMaskParams p{1, 1, 8, 0};
+      GatherMask(out, in, uint8_t(1), true, 2 * q, p, count);
+      GatherMask(out[q], in, uint8_t(2), true, 2 * q, p, count);
     } else {
       Gather(out, in, idx, uint32_t(0), width);
     }
@@ -59,4 +59,14 @@ extern "C" __global__ __aicore__ void permute_aiv(
     }
     pipe_barrier(PIPE_ALL);
   }
+}
+
+extern "C" __global__ __aicore__ void permute_aiv(
+    GM_ADDR x, GM_ADDR z, GM_ADDR y, GM_ADDR indices, GM_ADDR t, GM_ADDR j,
+    uint32_t q, uint32_t batch, uint32_t mode, uint32_t element_bytes) {
+  KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);
+  if (element_bytes == 2)
+    permute_impl<uint16_t>(x, z, y, indices, t, j, q, batch, mode);
+  else
+    permute_impl<uint32_t>(x, z, y, indices, t, j, q, batch, mode);
 }

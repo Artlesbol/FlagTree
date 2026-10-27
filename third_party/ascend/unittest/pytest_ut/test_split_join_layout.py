@@ -63,3 +63,35 @@ def test_split_join_layout(shape, dtype, swap, strides):
     guard = torch.ones(n*ys + 2, dtype=torch.bool)
     guard[1:1+n*ys:ys] = False
     assert torch.all(out_storage.cpu()[guard] == -111)
+
+
+@triton.jit
+def _permute_bits(X, Y, SHAPE: tl.constexpr, ORDER: tl.constexpr, N: tl.constexpr):
+    i = tl.arange(0, N)
+    v = tl.reshape(tl.load(X + i), SHAPE)
+    tl.store(Y + i, tl.reshape(tl.permute(v, ORDER), (N,)))
+
+
+@pytest.mark.parametrize("shape,order", [
+    ((4, 32), (1, 0)), ((32, 4), (1, 0)),
+    ((2, 4, 16), (2, 0, 1)), ((4, 1, 32), (2, 1, 0)),
+    ((1, 16, 1, 8), (2, 3, 0, 1)), ((32, 256), (1, 0)),
+])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
+def test_permutation_bit_patterns(shape, order, dtype):
+    # Include NaN payloads, infinities, signed zero and subnormal bit patterns.
+    bits_dtype = torch.int32 if dtype == torch.float32 else torch.int16
+    patterns = ([0, -2147483648, 0x7fc00001, -8388608, 0x7f800000, 1, -1, 12345]
+                if dtype == torch.float32 else
+                [0, -32768, 0x7fc1, -128, 0x7f80, 1, -1, 12345]
+                if dtype == torch.bfloat16 else
+                [0, -32768, 0x7e01, -1024, 0x7c00, 1, -1, 12345])
+    n = 1
+    for dim in shape:
+        n *= dim
+    raw = torch.tensor(patterns, dtype=bits_dtype).repeat(n // len(patterns))
+    x = raw.view(dtype).npu()
+    y = torch.empty_like(x)
+    _permute_bits[(1,)](x, y, SHAPE=shape, ORDER=order, N=n)
+    expected = raw.reshape(shape).permute(order).contiguous().reshape(-1)
+    assert torch.equal(y.cpu().view(bits_dtype), expected)

@@ -202,6 +202,11 @@ def _merge_xpu_package_dir(existing_package_dir):
 
     packages = set(find_packages(where=FLAGTREE_PYTHON_ROOT, include=["triton", "triton.*"]))
     packages.update(find_packages(where=XPU_PYTHON_ROOT, include=["triton", "triton.*"]))
+    # setup_helper adds these namespace/data packages explicitly because they
+    # do not carry regular __init__.py files and therefore are not discoverable
+    # by find_packages(). Keep their source roots anchored to the main tree;
+    # otherwise package_dir["triton"] redirects them into the XPU overlay.
+    packages.update({"triton._C", "triton._C.libtriton", "triton.tools.triton_to_gluon_translater"})
     packages.update(package_dir)
     for package in sorted(packages):
         if not package.startswith("triton") or package == "":

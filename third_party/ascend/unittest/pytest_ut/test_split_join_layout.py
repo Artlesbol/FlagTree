@@ -102,7 +102,7 @@ def _computed_split(X, Y, SIDE, N: tl.constexpr, XS: tl.constexpr,
                     YS: tl.constexpr, VALID: tl.constexpr):
     i = tl.arange(0, 2 * N)
     v = tl.load(X + i * XS, i < VALID, other=0)
-    v = v + 1
+    v = (v + 1).to(X.dtype.element_ty)
     tl.store(SIDE + i, v)
     a, b = tl.split(tl.reshape(v, (N, 2)))
     j = tl.arange(0, N)

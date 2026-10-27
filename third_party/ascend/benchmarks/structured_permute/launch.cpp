@@ -1,0 +1,10 @@
+#include <cstdint>
+#include <aclrtlaunch_permute_aiv.h>
+
+extern "C" uint32_t launch_permute(uint32_t blocks, void *stream, void *x,
+                                   void *z, void *y, void *indices,
+                                   uint32_t q, uint32_t batch, uint32_t mode) {
+  return ACLRT_LAUNCH_KERNEL(permute_aiv)(blocks, stream,
+      static_cast<uint8_t *>(x), static_cast<uint8_t *>(z),
+      static_cast<uint8_t *>(y), static_cast<uint8_t *>(indices), q, batch, mode);
+}

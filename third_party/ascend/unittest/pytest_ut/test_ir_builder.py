@@ -7,6 +7,12 @@ import pytest
 from triton._C.libtriton import ascend, buffer_ir, gluon_ir, ir
 
 
+@pytest.fixture(scope="module", autouse=True)
+def assign_npu():
+    """Override the parent device fixture: these tests only inspect host IR/cache."""
+    yield
+
+
 @pytest.mark.parametrize("mode", ["simd", "simt"])
 def test_shared_builder_layout(mode):
     context = ir.context()

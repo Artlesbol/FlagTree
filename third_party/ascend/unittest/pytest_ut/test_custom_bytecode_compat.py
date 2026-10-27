@@ -3,10 +3,15 @@ from types import SimpleNamespace
 import importlib
 
 import pytest
-import torch_npu  # registers torch.npu for the suite's device fixture
 
 compiler = importlib.import_module("triton.backends.ascend.compiler")
 late = importlib.import_module("triton.backends.ascend.structured_permute_ir")
+
+
+@pytest.fixture(scope="module", autouse=True)
+def assign_npu():
+    """Override the parent device fixture: these tests only inspect host IR/cache."""
+    yield
 
 
 def test_nested_attribute_split():

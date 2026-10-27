@@ -6,6 +6,7 @@ TLE_SUPPORTED_PRIMITIVES = [
     "gpu.set_layout",
     "extract_tile",
     "device_mesh",
+    "distributed_barrier",
     "sharding",
     "shard_id",
     "n_pes",

@@ -563,6 +563,7 @@ class HIPBackend(BaseBackend):
         passes.convert.add_index_to_llvmir(pm)
 
         hcu.passes.ttgpuir.add_allocate_shared_memory(pm)
+        passes.ttgpuir.add_allocate_global_scratch_memory(pm)
         # instrumentation point here so we can override IRs above (e.g., ttir and ttgir)
         if HIPBackend.instrumentation:
             HIPBackend.instrumentation.patch("ttgpuir_to_llvmir", pm, mod.context)
@@ -731,6 +732,10 @@ class HIPBackend(BaseBackend):
 
         # Get some metadata
         metadata["shared"] = src.get_int_attr("ttg.shared")
+        has_grid_barrier = src.get_int_attr("tle.grid_barrier_scratch_offset") is not None
+        metadata["launch_cooperative_grid"] = options.launch_cooperative_grid or has_grid_barrier
+        metadata["global_scratch_size"] = src.get_int_attr("ttg.global_scratch_memory_size") or 0
+        metadata["global_scratch_align"] = src.get_int_attr("ttg.global_scratch_memory_alignment") or 1
         metadata["profile_scratch_size"] = src.get_int_attr("ttg.profile_scratch_memory_size") or 0
         metadata["profile_scratch_align"] = src.get_int_attr("ttg.profile_scratch_memory_alignment") or 1
 

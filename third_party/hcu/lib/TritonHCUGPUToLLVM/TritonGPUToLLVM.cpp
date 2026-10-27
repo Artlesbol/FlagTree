@@ -19,9 +19,11 @@
 #include "mlir/Dialect/LLVMIR/ROCDLDialect.h"
 #include "mlir/Pass/Pass.h"
 #ifdef __TLE__
+#include "tle/dialect/include/Conversion/TleToLLVM/DistributedBarrierOpToLLVM.h"
 #include "tle/dialect/include/Conversion/TleToLLVM/ExclusiveCumsumOpToLLVM.h"
 #include "tle/dialect/include/Conversion/TleToLLVM/LocalPointersOpToLLVM.h"
 #ifdef FLAGCX_ENABLED
+#include "tle/dialect/include/Conversion/TleToLLVM/FlagCxOpToLLVM/FlagCxBarrierOpToLLVM.h"
 #include "tle/dialect/include/Conversion/TleToLLVM/FlagCxOpToLLVM/FlagCxSignalOpToLLVM.h"
 #include "tle/dialect/include/Conversion/TleToLLVM/FlagCxOpToLLVM/GetLocalRankOpToLLVM.h"
 #include "tle/dialect/include/Conversion/TleToLLVM/FlagCxOpToLLVM/GetWorldRankOpToLLVM.h"
@@ -152,6 +154,7 @@ struct ConvertTritonHCUGPUToLLVM
   void getDependentDialects(DialectRegistry &registry) const override {
     registry
         .insert<LLVM::LLVMDialect, NVVM::NVVMDialect, mlir::ROCDL::ROCDLDialect,
+                mlir::gpu::GPUDialect, arith::ArithDialect,
                 mlir::triton::hcugpu::TritonHCUGPUDialect>();
   }
 
@@ -248,9 +251,13 @@ struct ConvertTritonHCUGPUToLLVM
       mlir::triton::tle::populateMemDescAliasOpToLLVMPatterns(
           typeConverter, tlePatterns,
           patternBenefitPrioritizeOverLLVMConversions);
+      mlir::triton::tle::populateDistributedBarrierOpToLLVMPatterns(
+          typeConverter, tlePatterns,
+          patternBenefitPrioritizeOverLLVMConversions, &targetInfo);
 #ifdef FLAGCX_ENABLED
-      // Register rank and signal conversions individually: distributed_barrier
-      // is not supported by this HCU integration yet.
+      mlir::triton::tle::populateFlagCxBarrierOpToLLVMPatterns(
+          typeConverter, tlePatterns,
+          patternBenefitPrioritizeOverLLVMConversions);
       mlir::triton::tle::populateGetDeviceIdOpToFlagCxPatterns(
           typeConverter, tlePatterns,
           patternBenefitPrioritizeOverLLVMConversions);

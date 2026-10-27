@@ -104,3 +104,28 @@ def test_late_storage_conversion_abi():
         result = late.lower_private_ops(text)
         assert result.count('memref.cast') == 3
         assert f'func.call @custom_flagtree_{symbol}' in result
+
+
+def test_effective_dispatch_is_hashed_and_explicit_option_wins(monkeypatch):
+    from triton.backends.compiler import GPUTarget
+    backend = compiler.AscendBackend(GPUTarget('npu', 'Ascend910B4', 0))
+    monkeypatch.setenv('TRITON_ALL_BLOCKS_PARALLEL', '0')
+    off = backend.parse_options({})
+    on_explicit = backend.parse_options({'enable_auto_blockify': True})
+    monkeypatch.setenv('TRITON_ALL_BLOCKS_PARALLEL', '1')
+    on = backend.parse_options({})
+    off_explicit = backend.parse_options({'enable_auto_blockify': False})
+    assert off.enable_auto_blockify is False and on.enable_auto_blockify is True
+    assert off.hash() == off_explicit.hash()
+    assert on.hash() == on_explicit.hash()
+    assert off.hash() != on.hash()
+
+
+def test_join_lowering_policy_is_validated_and_hashed():
+    from triton.backends.compiler import GPUTarget
+    backend = compiler.AscendBackend(GPUTarget('npu', 'Ascend910B4', 0))
+    options = [backend.parse_options({'structured_join_lowering': value})
+               for value in ['auto', 'native', 'packed']]
+    assert len({option.hash() for option in options}) == 3
+    with pytest.raises(ValueError, match='structured_join_lowering'):
+        backend.parse_options({'structured_join_lowering': 'unknown'})

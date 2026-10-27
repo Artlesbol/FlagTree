@@ -122,10 +122,12 @@ __aicore__ inline void cast_contract(GM_ADDR x, GM_ADDR a,
 extern "C" __global__ __aicore__ void ub_contract_aiv(GM_ADDR x, GM_ADDR indices,
     GM_ADDR a, GM_ADDR b, GM_ADDR cfg, uint32_t mode, uint32_t wordBytes) {
   KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);
+#if !defined(__DAV_C220_CUBE__)
   GlobalTensor<uint32_t> config;
   config.SetGlobalBuffer(reinterpret_cast<__gm__ uint32_t *>(cfg));
   if (mode == 2) cast_contract<true>(x, a, config);
   else if (mode == 3) cast_contract<false>(x, a, config);
   else if (wordBytes == 2) word_contract<int16_t>(x, indices, a, b, config, mode);
   else word_contract<int32_t>(x, indices, a, b, config, mode);
+#endif
 }

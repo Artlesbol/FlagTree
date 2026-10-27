@@ -4,6 +4,7 @@ Run this entire file in separate processes with TRITON_ALL_BLOCKS_PARALLEL=0/1.
 All host references use logical elements; guard checks include storage holes.
 """
 import pytest
+import random
 import torch
 import torch_npu
 import triton
@@ -168,3 +169,53 @@ def test_dispatch_change_in_same_process(monkeypatch):
         kernels.append(kernel)
     assert kernels[0].hash != kernels[1].hash
     assert kernels[0].hash == kernels[2].hash
+
+
+def _graph_cases():
+    rng = random.Random(20261027)
+    cases = []
+    while len(cases) < 16:
+        rank = rng.randrange(2, 6)
+        shape = [1 << rng.randrange(3) for _ in range(rank)]
+        split_axis = rng.randrange(rank)
+        shape[split_axis] = 2
+        order = [i for i in range(rank) if i != split_axis]
+        rng.shuffle(order)
+        case = (tuple(shape), tuple(order+[split_axis]), bool(len(cases) % 2))
+        if case not in cases:
+            cases.append(case)
+    return cases
+
+
+@triton.jit
+def _generated_graph(X, CHANNELS, TRANSPOSED, JOINED, N: tl.constexpr,
+                     SHAPE: tl.constexpr, ORDER: tl.constexpr, SWAP: tl.constexpr):
+    i = tl.arange(0, N)
+    v = (tl.load(X+i)+1).to(X.dtype.element_ty)
+    t = tl.permute(tl.reshape(v, SHAPE), ORDER)
+    tl.store(TRANSPOSED+i, tl.reshape(t, (N,)))
+    a, b = tl.split(t)
+    j = tl.arange(0, N//2)
+    tl.store(CHANNELS+j, tl.reshape(a, (N//2,)))
+    tl.store(CHANNELS+N//2+j, tl.reshape(b, (N//2,)))
+    joined = tl.join(b, a) if SWAP else tl.join(a, b)
+    tl.store(JOINED+i, tl.reshape(joined, (N,)))
+
+
+@pytest.mark.parametrize('shape,order,swap', _graph_cases())
+@pytest.mark.parametrize('dtype', [torch.float16, torch.float32])
+def test_seeded_rank2_to_rank5_graphs(shape, order, swap, dtype):
+    n = 1
+    for d in shape:
+        n *= d
+    cpu = torch.arange(n, dtype=torch.int32).to(dtype)
+    x = cpu.npu()
+    buffers = [torch.full((n+2,), -111, dtype=dtype, device='npu') for _ in range(3)]
+    _generated_graph[(1,)](x, *(b[1:] for b in buffers), N=n, SHAPE=shape, ORDER=order, SWAP=swap)
+    t = (cpu+1).reshape(shape).permute(order).contiguous()
+    a, b = t[..., 0], t[..., 1]
+    expected = [torch.cat((a.reshape(-1), b.reshape(-1))), t.reshape(-1),
+                torch.stack((b, a) if swap else (a, b), -1).reshape(-1)]
+    for storage, ref in zip(buffers, expected):
+        assert torch.equal(storage.cpu()[1:-1], ref)
+        assert storage.cpu()[[0, -1]].tolist() == [-111, -111]

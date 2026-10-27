@@ -96,7 +96,7 @@ def test_dense_native_admission(route, dtype):
     guard = torch.ones(storage.numel(), dtype=torch.bool)
     guard[1:1+2*q*ys:ys] = False
     assert torch.all(storage.cpu()[guard] == -111)
-    assert kernel.metadata.uses_structured_permutation == (route != 'dense')
+    assert kernel.metadata.uses_structured_permutation == (route != 'dense' or kernel.metadata.enable_auto_blockify)
 
 
 @pytest.mark.parametrize('q', [1, 2, 4, 8, 16, 1024, 2048, 4096])
@@ -150,3 +150,21 @@ def test_computed_large_join_budget_contract(record_property):
         expected = torch.stack((cpu+1, cpu.flip(0)-1), -1).reshape(-1)
         assert torch.equal(out.cpu(), expected)
         record_property('budget_outcome', 'compiled_and_bit_exact')
+
+
+def test_dispatch_change_in_same_process(monkeypatch):
+    batch, q = 41, 16
+    cpu = torch.arange(batch*2*q, dtype=torch.int32).remainder(97).float()
+    x = cpu.npu()
+    y, side = [torch.full_like(x, -111) for _ in range(2)]
+    kernels = []
+    for mode in [0, 1, 0]:
+        monkeypatch.setenv('TRITON_ALL_BLOCKS_PARALLEL', str(mode))
+        y.fill_(-111)
+        kernel = _batched_channel[(batch,)](x, y, side, Q=q, VALID=2*q, XS=1, YS=1, CASE=2)
+        expected = (cpu+1).reshape(batch, q, 2).flip(-1).reshape(-1)
+        assert torch.equal(y.cpu(), expected)
+        assert kernel.metadata.enable_auto_blockify is bool(mode)
+        kernels.append(kernel)
+    assert kernels[0].hash != kernels[1].hash
+    assert kernels[0].hash == kernels[2].hash

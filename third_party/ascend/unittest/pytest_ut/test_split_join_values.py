@@ -162,4 +162,4 @@ def test_dense_native_split_join_bits(dtype):
     y = torch.empty_like(x)
     join = _dense_join_bits[(1,)](a.view(dtype), b.view(dtype), y.view(dtype), Q=q)
     assert torch.equal(y.cpu(), raw)
-    assert not getattr(join.metadata, 'uses_structured_permutation', False)
+    assert join.metadata.uses_structured_permutation == join.metadata.enable_auto_blockify

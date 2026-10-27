@@ -90,7 +90,8 @@ __aicore__ inline void cast_contract(GM_ADDR x, GM_ADDR a,
   pipe.InitBuffer(inputBuffer, STORAGE*sizeof(Src));
   pipe.InitBuffer(outputBuffer, STORAGE*sizeof(Dst));
   pipe.InitBuffer(tempBuffer, STORAGE*sizeof(half));
-  auto input = inputBuffer.Get<Src>(), output = outputBuffer.Get<Dst>();
+  auto input = inputBuffer.Get<Src>();
+  auto output = outputBuffer.Get<Dst>();
   auto temp = tempBuffer.Get<half>();
   GlobalTensor<Src> gx;
   GlobalTensor<Dst> ga;

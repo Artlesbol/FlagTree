@@ -126,8 +126,12 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         enable_mask_fallback_conversion = metadata["enable_mask_fallback_conversion"]
         optimize_dynamic_offset = metadata["optimize_dynamic_offset"]
         auto_blockify_size = metadata["auto_blockify_size"]
-        if not _is_auto_map_parallel_blocks_enabled():
+        if not metadata["enable_auto_blockify"]:
             auto_blockify_size = 1
+        builder = ir.builder(mod.context)
+        mod.set_attr("flagtree.auto_blockify", builder.get_bool_attr(metadata["enable_auto_blockify"]))
+        mod.set_attr("flagtree.structured_join_lowering",
+                     builder.get_string_attr(opt.structured_join_lowering))
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
         ascend.passes.ttir.add_auto_blockify(pm, auto_blockify_size)
@@ -941,7 +945,7 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
             _compile_option_list += \
                 [f"--enable-tuning-mode={enable_tuning_mode}"]
 
-        if _is_auto_map_parallel_blocks_enabled():
+        if metadata["enable_auto_blockify"]:
             _compile_option_list += ["--enable-auto-blockify-loop"]
         npu_compiler_path, env = _get_npucompiler_path()
         env = _configure_structured_permutation_compiler(metadata, npu_compiler_path, env, tmpdir)
@@ -1038,6 +1042,7 @@ class NPUOptions:
 
     auto_blockify_size: int = 1
     enable_auto_blockify: bool = None
+    structured_join_lowering: str = "auto"
     compile_on_910_95: bool = is_compile_on_910_95
     optimize_dynamic_offset: bool = False
     enable_mask_fallback_conversion: bool = False
@@ -1128,6 +1133,8 @@ class NPUOptions:
     disable_fma: bool = False
 
     def __post_init__(self):
+        if self.structured_join_lowering not in ("auto", "native", "packed"):
+            raise ValueError("structured_join_lowering must be auto, native or packed")
         # Parse compile_mode and set related fields
         if self.compile_mode == "simd":
             object.__setattr__(self, "parallel_mode", "simd")
@@ -1227,6 +1234,11 @@ class AscendBackend(BaseBackend):
         if self.target.backend == "npu":
             args = {k: opts[k] for k in NPUOptions.__dataclass_fields__.keys() if k in opts}
             args.setdefault("arch", self.target.arch)
+            # Resolve the environment default before hashing or storing metadata.
+            # Launch geometry must never be reconstructed from a different env
+            # than the one that compiled a cached binary.
+            if args.get("enable_auto_blockify") is None:
+                args["enable_auto_blockify"] = _is_auto_map_parallel_blocks_enabled()
             options = NPUOptions(**args)
         else:
             raise NotImplementedError(f"Backend '{self.target.backend}' is not supported. "

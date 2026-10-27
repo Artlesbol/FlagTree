@@ -82,18 +82,22 @@ def main():
     y = torch.full((batch, width), float("nan"), device="npu")
     t, j = torch.empty_like(y), torch.empty_like(y)
     if args.impl == "aiv":
-        if args.case == "nested" or not args.library or q > 4096:
-            p.error("AIV reference currently supports split/join with --library")
+        if not args.library or (args.case == "nested" and q > 1024):
+            p.error("AIV reference needs --library; nested requires Q<=1024")
         lib = ctypes.CDLL(str(args.library.resolve()))
         call = lib.launch_permute
-        call.argtypes = [ctypes.c_uint32, ctypes.c_void_p] + [ctypes.c_void_p] * 4 + [ctypes.c_uint32] * 3
+        call.argtypes = [ctypes.c_uint32, ctypes.c_void_p] + [ctypes.c_void_p] * 6 + [ctypes.c_uint32] * 3
         call.restype = ctypes.c_uint32
         idx = ((torch.arange(2*q) // 2) + (torch.arange(2*q) % 2) * q).to(torch.int32) * 4
+        if args.case == "nested":
+            i = torch.arange(4*q)
+            idx = ((i // 4) + (i % 4) * q).to(torch.int32) * 4
         idx = idx.npu()
         stream = torch.npu.current_stream().npu_stream
         def launch():
             rc = call(min(batch, 40), stream, x.data_ptr(), z.data_ptr(), y.data_ptr(),
-                      idx.data_ptr(), q, batch, int(args.case == "join"))
+                      idx.data_ptr(), t.data_ptr(), j.data_ptr(), q, batch,
+                      {"split": 0, "join": 1, "nested": 2}[args.case])
             if rc:
                 raise RuntimeError(f"AIV launch failed: {rc}")
     elif args.case == "nested":

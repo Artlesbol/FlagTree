@@ -70,10 +70,12 @@ def main():
     p.add_argument("--warmup", type=int, default=10)
     p.add_argument("--iters", type=int, default=100)
     p.add_argument("--rounds", type=int, default=5)
+    p.add_argument("--graph-steps", type=int, default=64,
+                   help="kernel calls per captured graph, to amortize host replay gaps")
     p.add_argument("--aiv-blocks", type=int, default=0,
                    help="0: persistent 40-block reference; use batch for matching logical grid")
     args = p.parse_args()
-    if args.batch < 1 or args.aiv_blocks < 0:
+    if args.batch < 1 or args.aiv_blocks < 0 or args.graph_steps < 1:
         p.error("batch must be positive and aiv-blocks nonnegative")
     if args.q < 32 or args.q > 4096 or args.q & (args.q - 1):
         p.error("Q must be a power of two in [32,4096]")
@@ -149,7 +151,8 @@ def main():
     initial_stream = torch.npu.current_stream().npu_stream
     with torch.npu.graph(graph):
         capture_stream = torch.npu.current_stream().npu_stream
-        launch()
+        for _ in range(args.graph_steps):
+            launch()
     torch.npu.synchronize()
     # Prove that graph replay executes the kernel, including every side output.
     sentinel = float("nan") if dtype.is_floating_point else -111
@@ -172,11 +175,11 @@ def main():
             graph.replay()
         end.record()
         end.synchronize()
-        times.append(start.elapsed_time(end) * 1000 / args.iters)
+        times.append(start.elapsed_time(end) * 1000 / (args.iters * args.graph_steps))
     result = vars(args).copy()
     result.update(status="pass", kernel_us=statistics.median(times), rounds_us=times,
                   us_per_row=statistics.median(times)/batch, triton=triton.__version__,
-                  cache=os.environ.get("TRITON_CACHE_DIR"), timing="device_graph_events",
+                  cache=os.environ.get("TRITON_CACHE_DIR"), timing="device_graph_events_amortized",
                   logical_grid=blocks if args.impl == "aiv" else batch,
                   replay_outputs_verified=True,
                   capture_stream_changed=capture_stream != initial_stream,

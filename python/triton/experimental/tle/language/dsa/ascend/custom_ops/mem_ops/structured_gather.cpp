@@ -126,3 +126,52 @@ REGISTER_STRUCTURED_SPLIT(bf16, bfloat16_t)
 REGISTER_STRUCTURED_SPLIT(float, float)
 REGISTER_STRUCTURED_SPLIT(int16, int16_t)
 REGISTER_STRUCTURED_SPLIT(int32, int32_t)
+
+// These conversions serve byte permutations only: word values are always in
+// [-128,127]. Half represents that range exactly, so no saturation/overflow
+// conversion or CANN's sub-block 2D cast is required.
+template <bool EXTEND>
+__aiv__ __attribute__((always_inline)) void storage_cast(
+    memref_t<__ubuf__ typename std::conditional<EXTEND, int8_t, int16_t>::type, 1> *src,
+    memref_t<__ubuf__ typename std::conditional<EXTEND, int16_t, int8_t>::type, 1> *dst,
+    memref_t<__ubuf__ half, 1> *scratch) {
+  auto in = src->aligned + src->offset;
+  auto out = dst->aligned + dst->offset;
+  auto tmp = scratch->aligned + scratch->offset;
+  const int64_t n = dst->sizes[0];
+  if (src->strides[0] != 1 || dst->strides[0] != 1 || scratch->strides[0] != 1 ||
+      ((reinterpret_cast<intptr_t>(in) | reinterpret_cast<intptr_t>(out) |
+        reinterpret_cast<intptr_t>(tmp)) & 31)) {
+    INTRINSIC(set_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
+    INTRINSIC(wait_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
+    for (int64_t i = 0; i < n; ++i)
+      out[i * dst->strides[0]] = in[i * src->strides[0]];
+    INTRINSIC(set_flag, PIPE_S, PIPE_V, LIB_EVENT_ID0);
+    INTRINSIC(wait_flag, PIPE_S, PIPE_V, LIB_EVENT_ID0);
+    return;
+  }
+  INTRINSIC_NO_ARGS(set_mask_count);
+  INTRINSIC(set_vector_mask, 0, n);
+  if constexpr (EXTEND)
+    INTRINSIC(vconv_s82f16, tmp, in, 1, 1, 1, 8, 4);
+  else
+    INTRINSIC(vconv_s162f16r, tmp, in, 1, 1, 1, 8, 8);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  if constexpr (EXTEND)
+    INTRINSIC(vconv_f162s16z, out, tmp, 1, 1, 1, 8, 8);
+  else
+    INTRINSIC(vconv_f162s8z, out, tmp, 1, 1, 1, 4, 8);
+  INTRINSIC_NO_ARGS(set_mask_norm);
+}
+
+extern "C" __aiv__ __attribute__((always_inline)) void
+_mlir_ciface_custom_flagtree_byte_to_word(memref_t<__ubuf__ int8_t, 1> *src,
+    memref_t<__ubuf__ int16_t, 1> *dst, memref_t<__ubuf__ half, 1> *scratch) {
+  storage_cast<true>(src, dst, scratch);
+}
+
+extern "C" __aiv__ __attribute__((always_inline)) void
+_mlir_ciface_custom_flagtree_word_to_byte(memref_t<__ubuf__ int16_t, 1> *src,
+    memref_t<__ubuf__ int8_t, 1> *dst, memref_t<__ubuf__ half, 1> *scratch) {
+  storage_cast<false>(src, dst, scratch);
+}

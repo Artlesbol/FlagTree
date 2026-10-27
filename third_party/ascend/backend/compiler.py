@@ -435,7 +435,8 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     bitcodes = re.findall(BITCODES_REGEX, linalg)
     metadata["bitcodes"] = [val for group in bitcodes for val in group if val]
     metadata["uses_structured_permutation"] = any(
-        name in linalg for name in ("custom_flagtree_stride_gather_", "custom_flagtree_split_"))
+        name in linalg for name in ("custom_flagtree_stride_gather_", "custom_flagtree_split_",
+                                    "custom_flagtree_byte_to_word", "custom_flagtree_word_to_byte"))
     if metadata["uses_structured_permutation"]:
         # This is a compiler-generated primitive; callers need not import TLE
         # or annotate kernels with a bitcode path. The Ascend build produces

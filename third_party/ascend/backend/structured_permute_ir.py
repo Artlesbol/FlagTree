@@ -39,7 +39,7 @@ def _canonical_memref(typ):
     if not typ.startswith('memref<') or not typ.endswith('>'):
         raise ValueError('Structured permutation must be bufferized before ABI lowering')
     fields = split_fields(typ[7:-1])
-    match = re.fullmatch(r'(?:\d+|\?)x(f16|bf16|f32|i16|i32)', fields[0])
+    match = re.fullmatch(r'(?:\d+|\?)x(f16|bf16|f32|i8|i16|i32)', fields[0])
     if not match or fields[-1] != '#hivm.address_space<ub>':
         raise ValueError('Expected a rank-one UB memref, got ' + typ)
     if len(fields) not in (2, 3) or (len(fields) == 3 and not fields[1].startswith('strided<')):
@@ -62,18 +62,23 @@ def lower_private_ops(text):
         if not match:
             raise ValueError('Expected a result-free, bufferized private custom operation')
         indent, operands, attrs, types = match.groups()
-        symbol = re.search(r'\bsymbol = "(custom_flagtree_(?:stride_gather|split)_'
-                           r'(half|bf16|float|int16|int32))"', attrs)
+        symbol = re.search(r'\bsymbol = "(custom_flagtree_(?:(?:stride_gather|split)_'
+                           r'(?:half|bf16|float|int16|int32)|byte_to_word|word_to_byte))"', attrs)
         if not symbol:
             raise ValueError('Unknown FlagTree structured permutation ABI')
-        name, suffix = symbol.groups()
+        name = symbol[1]
         operands, types = split_fields(operands), split_fields(types)
-        if len(operands) != 4 or len(types) != 4 or any(
+        cast = name.endswith(('byte_to_word', 'word_to_byte'))
+        arity = 3 if cast else 4
+        if len(operands) != arity or len(types) != arity or any(
                 not re.fullmatch(r'%[\w.$-]+(?:#\d+)?', v) for v in operands):
             raise ValueError('Invalid structured permutation operands')
         canonical = [_canonical_memref(t) for t in types]
-        elem = dict(half='f16', bf16='bf16', float='f32', int16='i16', int32='i32')[suffix]
-        expected = [elem, 'i32', elem, 'i32'] if 'stride_gather' in name else [elem]*3 + ['i32']
+        if cast:
+            expected = ['i8', 'i16', 'f16'] if name.endswith('byte_to_word') else ['i16', 'i8', 'f16']
+        else:
+            elem = dict(half='f16', bf16='bf16', float='f32', int16='i16', int32='i32')[name.rsplit('_', 1)[1]]
+            expected = [elem, 'i32', elem, 'i32'] if 'stride_gather' in name else [elem]*3 + ['i32']
         if any(not t.startswith('memref<?x' + e + ',') for t, e in zip(canonical, expected)):
             raise ValueError('Private operation symbol and operand types disagree')
         if name in declarations and declarations[name] != canonical:

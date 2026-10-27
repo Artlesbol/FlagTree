@@ -102,7 +102,12 @@ __aicore__ inline void cast_contract(GM_ADDR x, GM_ADDR a,
   auto scratch = descriptor(temp, config.GetValue(0), config.GetValue(10), config.GetValue(11));
   for (uint32_t repeat = 0; repeat < config.GetValue(1); ++repeat) {
     DataCopy(input, gx, STORAGE);
-    Duplicate(output, Dst(-91), STORAGE);
+    if constexpr (sizeof(Dst) == 1) {
+      auto poison = outputBuffer.Get<int16_t>();
+      Duplicate(poison, int16_t(-23131), STORAGE/2); // 0xa5a5: both bytes -91
+    } else {
+      Duplicate(output, Dst(-91), STORAGE);
+    }
     pipe_barrier(PIPE_ALL);
     if constexpr (EXTEND)
       _mlir_ciface_custom_flagtree_byte_to_word(&src, &dst, &scratch);

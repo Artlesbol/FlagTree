@@ -859,14 +859,14 @@ class XPUBackend(BaseBackend):
             # runtime symbols (get_xshmemi_device_state /
             # xshmemi_threadfence_system).  The consumer must provide those at
             # final device link; do a relocatable pre-link before elfconv.
-            xshmem_lib = os.environ.get("FLAGCX_XSHMEM_DEVICE_LIB")
-            if not xshmem_lib:
-                ccl_home = os.environ.get("FLAGCX_XPU_CCL_HOME") or os.environ.get("XCCL_HOME")
-                if ccl_home:
-                    candidate = os.path.join(ccl_home, "lib", "libxshmem_device.a")
-                    if os.path.isfile(candidate):
-                        xshmem_lib = candidate
             if metadata.get("xpu_uses_flagcx"):
+                xshmem_lib = os.environ.get("FLAGCX_XSHMEM_DEVICE_LIB")
+                if not xshmem_lib:
+                    ccl_home = os.environ.get("FLAGCX_XPU_CCL_HOME") or os.environ.get("XCCL_HOME")
+                    if ccl_home:
+                        candidate = os.path.join(ccl_home, "lib", "libxshmem_device.a")
+                        if os.path.isfile(candidate):
+                            xshmem_lib = candidate
                 if not xshmem_lib or not os.path.isfile(xshmem_lib):
                     raise RuntimeError(
                         "XPU FlagCX distributed kernel needs the XSHMEM device library; "

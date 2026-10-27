@@ -28,16 +28,18 @@ def main():
         os.execve(real, [real, *args], env)
     with tempfile.TemporaryDirectory(prefix="flagtree-hivmc-") as tmp:
         lowered = Path(tmp) / "kernel.standard.mlir"
-        cmd = [env["FLAGTREE_CANN_OPT"], str(source), "--convert-hivm-to-std", "-o", str(lowered)]
-        subprocess.run(cmd, env=env, check=True)
-        if "hivm.hir.custom" in lowered.read_text():
-            raise RuntimeError("The installed CANN optimizer did not lower the custom operation")
         dump = env.get("FLAGTREE_PERMUTE_DUMP_DIR")
+        target = None
         if dump:
             target = Path(dump) / str(os.getpid())
             target.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target / "before.mlir")
+        cmd = [env["FLAGTREE_CANN_OPT"], str(source), "--convert-hivm-to-std", "-o", str(lowered)]
+        subprocess.run(cmd, env=env, check=True)
+        if target:
             shutil.copy2(lowered, target / "after.mlir")
+        if "hivm.hir.custom" in lowered.read_text():
+            raise RuntimeError("The installed CANN optimizer did not lower the custom operation")
         subprocess.run([real, str(lowered), *args[1:]], env=env, check=True)
 
 

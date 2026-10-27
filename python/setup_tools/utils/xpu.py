@@ -130,12 +130,41 @@ def get_package_dir():
     }
 
 
-def _is_backend_package(package):
-    return package == "triton.backends" or package.startswith("triton.backends.")
+def _is_xpu_tle_package(package):
+    return package == "triton.experimental.tle" or package.startswith("triton.experimental.tle.")
 
 
-def _is_language_extra_package(package):
-    return package == "triton.language.extra" or package.startswith("triton.language.extra.")
+def _xpu_package_source_dirs(package):
+    """Return source directories in overlay-preferred module order.
+
+    XPU keeps a small set of package-level entry points and a complete TLE
+    implementation in its overlay. Other Triton packages are assembled from
+    the main tree plus any remaining XPU modules, with the overlay winning on
+    a same-named module. This lets identical overlay files be removed without
+    making the corresponding main-tree modules disappear from the wheel.
+    """
+    if not package.startswith("triton"):
+        return []
+
+    rel_package = package.replace(".", os.sep)
+    sources = []
+    if not _is_xpu_tle_package(package):
+        main_dir = Path(FLAGTREE_PYTHON_ROOT) / rel_package
+        if main_dir.is_dir():
+            sources.append(main_dir)
+
+    overlay_dir = Path(XPU_PYTHON_ROOT) / rel_package
+    if overlay_dir.is_dir():
+        sources.insert(0, overlay_dir)
+
+    backend_prefix = "triton.backends.xpu"
+    if package == backend_prefix or package.startswith(backend_prefix + "."):
+        rel_backend = package[len(backend_prefix):].lstrip(".").replace(".", os.sep)
+        backend_dir = Path(BACKEND_ROOT) / rel_backend
+        if backend_dir.is_dir() and backend_dir not in sources:
+            sources.insert(0, backend_dir)
+
+    return sources
 
 
 def _merge_xpu_packages(existing_packages):
@@ -147,53 +176,30 @@ def _merge_xpu_packages(existing_packages):
             packages.append(package)
             seen.add(package)
 
-    # The XPU backend ships a complete `triton.*` python tree under
-    # third_party/xpu/python/triton. It overlays the main tree so the
-    # backend-specific tweaks (and XPU-only modules such as triton.ops and
-    # triton.language.extra.xpu) live with the backend instead of polluting
-    # the main Triton tree.
-    for package in find_packages(where=XPU_PYTHON_ROOT, include=["triton", "triton.*"]):
+    for package in existing_packages:
         add(package)
 
-    # TLE: the XPU overlay carries its own `triton.experimental.tle` (typed raw
-    # ops on the XPU dialects + an xpu-clang payload pipeline), which the loop
-    # above already picked up. The main tree's TLE is a same-origin fork with an
-    # incompatible mechanism (multi-backend regions), so it must NOT be added on
-    # top -- two sources for one package makes build_py copy whichever runs last.
-    # Non-XPU builds go through default.py and keep the main-tree version.
-
-    for package in existing_packages:
-        if (not package.startswith("triton.") or _is_backend_package(package) or _is_language_extra_package(package)
-                or package == "triton.profiler" or package.startswith("triton.profiler.")
-                or package == "triton.tools.triton_to_gluon_translater"):
-            add(package)
+    # Keep XPU-only packages and package-level overlay entry points in the
+    # distribution. Shared packages are assembled by XpuBuildPy below.
+    for package in find_packages(where=XPU_PYTHON_ROOT, include=["triton", "triton.*"]):
+        add(package)
 
     return packages
 
 
 def _merge_xpu_package_dir(existing_package_dir):
     package_dir = dict(existing_package_dir or {})
-    package_dir[""] = XPU_PYTHON_ROOT
+    package_dir[""] = FLAGTREE_PYTHON_ROOT
 
-    for package in find_packages(where=XPU_PYTHON_ROOT, include=["triton", "triton.*"]):
-        rel_package_path = package.replace(".", "/")
-        package_dir[package] = f"{XPU_PYTHON_ROOT}/{rel_package_path}"
-
-    # Packages that `_merge_xpu_packages` pulls in from the **main tree** (e.g.
-    # `triton.backends.nvidia` / `triton.backends.amd`, which the XPU overlay does
-    # not carry) have no directory under XPU_PYTHON_ROOT.  Without an explicit
-    # entry setuptools falls back to `package_dir[""]` and aborts with
-    #     error: package directory
-    #     'third_party/xpu/python/triton/backends/nvidia' does not exist
-    # Point them at the main tree explicitly so the merged install resolves.
-    for package in find_packages(where=FLAGTREE_PYTHON_ROOT, include=["triton", "triton.*"]):
-        if package in package_dir:
+    packages = set(find_packages(where=FLAGTREE_PYTHON_ROOT, include=["triton", "triton.*"]))
+    packages.update(find_packages(where=XPU_PYTHON_ROOT, include=["triton", "triton.*"]))
+    packages.update(package_dir)
+    for package in sorted(packages):
+        if not package.startswith("triton") or package == "":
             continue
-        rel_package_path = package.replace(".", "/")
-        if os.path.isdir(os.path.join(FLAGTREE_PYTHON_ROOT, rel_package_path)):
-            package_dir[package] = f"{FLAGTREE_PYTHON_ROOT}/{rel_package_path}"
-
-    # No main-tree TLE entry here either: see _merge_xpu_packages.
+        sources = _xpu_package_source_dirs(package)
+        if sources:
+            package_dir[package] = str(sources[0])
 
     return package_dir
 
@@ -205,6 +211,26 @@ def _patch_xpu_cmdclass(existing_cmdclass):
         return cmdclass
 
     class XpuBuildPy(original_build_py):
+
+        def find_package_modules(self, package, package_dir):
+            # setuptools normally scans one directory per package. XPU needs
+            # to merge the main tree and overlay at module granularity so a
+            # removed identical overlay file falls back to the main source.
+            sources = _xpu_package_source_dirs(package)
+            if not sources:
+                return super().find_package_modules(package, package_dir)
+
+            modules = {}
+            setup_script = os.path.abspath(self.distribution.script_name)
+            for source_dir in sources:
+                for filename in sorted(source_dir.glob("*.py")):
+                    if os.path.abspath(filename) == setup_script:
+                        continue
+                    module = filename.stem
+                    if module not in modules:
+                        modules[module] = (package, module, str(filename))
+            self.check_package(package, package_dir)
+            return list(modules.values())
 
         def find_data_files(self, package, src_dir):
             # setuptools >= 79 can include symlink directories themselves in the

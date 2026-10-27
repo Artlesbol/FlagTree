@@ -54,9 +54,11 @@ def test_split_join_layout(shape, dtype, swap, strides):
     joined = torch.stack((expected_b, expected_a) if swap else
                          (expected_a, expected_b), dim=-1).reshape(-1)
     other = torch.stack((expected_a, zcpu.reshape(a, b)), dim=-1).reshape(-1)
-    for actual, expected in [(ao, expected_a.reshape(-1)), (bo, expected_b.reshape(-1)),
-                             (to, t), (y, joined), (jo, other)]:
-        assert torch.equal(actual.cpu(), expected)
+    for name, actual, expected in [("split0", ao, expected_a.reshape(-1)),
+                                  ("split1", bo, expected_b.reshape(-1)),
+                                  ("transpose", to, t), ("join", y, joined),
+                                  ("independent_join", jo, other)]:
+        assert torch.equal(actual.cpu(), expected), (name, actual.cpu(), expected)
     # Check all output gaps as well as both guard elements.
     guard = torch.ones(n*ys + 2, dtype=torch.bool)
     guard[1:1+n*ys:ys] = False

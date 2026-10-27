@@ -19,8 +19,9 @@ peak-throughput claim. `aiv.cpp` treats values as raw 16/32-bit words.
 Each run checks every output before timing. After graph capture it clears all
 outputs, replays the graph, and checks them again. Native launches resolve the
 current stream inside the launch callback so they are captured on the graph's
-stream. Timing uses NPU events around repeated graph replay; Python/ctypes launch
-overhead is excluded. JSON contains all timing rounds and replay verification.
+stream. Each graph contains 64 kernel calls by default; event time is divided by the
+actual call count. This amortizes host replay gaps. Use `--graph-steps` to check
+convergence; all compared implementations must use the same protocol. JSON contains all timing rounds and replay verification.
 
 ## Build and run
 
@@ -110,7 +111,10 @@ cast path. Nonunit destination/index/scratch strides currently
 have a synchronized scalar correctness path. Do not claim vector performance
 for those layouts. Tiny two-scalar joins use two exact element insertions.
 
-Static permutation indices are bounded to 4096 entries (16 KiB); other shapes
-retain native transpose lowering. This suite verifies the listed cases and does
+Static permutation indices are bounded to 4096 entries (16 KiB). Joins with
+more than 2048 elements per input retain the existing interleave lowering before
+any byte widening; larger transposes retain native tiling. Zero-offset rank-one
+one-element copies normalize irrelevant strides to one, avoiding a separate
+strided-byte-load failure without adding scalar data loops. This suite verifies the listed cases and does
 not establish correctness or performance for every Triton operation/dtype or
 other CANN/SoC versions.

@@ -59,7 +59,12 @@ struct ExportCANNCustomOpsPass
       mlir::OperationState state(op->getLoc(), "cann_compat.custom");
       state.addOperands(op->getOperands());
       state.addTypes(op->getResultTypes());
-      state.addAttributes(op->getAttrs());
+      mlir::NamedAttrList attrs(op->getAttrs());
+      if (auto properties = mlir::dyn_cast_or_null<mlir::DictionaryAttr>(
+              op->getPropertiesAsAttribute()))
+        for (auto attr : properties)
+          attrs.set(attr.getName(), attr.getValue());
+      state.addAttributes(attrs);
       auto *transport = builder.create(state);
       op->replaceAllUsesWith(transport->getResults());
       op->erase();

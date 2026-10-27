@@ -342,9 +342,7 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
         # This is a compiler-generated primitive; callers need not import TLE
         # or annotate kernels with a bitcode path. The Ascend build produces
         # this package resource together with the backend.
-        import triton
-        bitcode = Path(triton.__file__).resolve().parent / (
-            "experimental/tle/language/dsa/ascend/custom_ops/custom_ops.bc")
+        bitcode = get_structured_permutation_bitcode()
         if not bitcode.is_file():
             raise RuntimeError("Missing structured permutation bitcode; rebuild the Ascend backend")
         if str(bitcode) not in metadata["bitcodes"]:
@@ -884,6 +882,18 @@ def get_libdevice():
     return os.path.join(current, "lib/libdevice.10.bc")
 
 
+def get_structured_permutation_bitcode():
+    import triton
+    return Path(triton.__file__).resolve().parent / (
+        "experimental/tle/language/dsa/ascend/custom_ops/custom_ops.bc")
+
+
+@functools.lru_cache()
+def _permutation_bitcode_hash(path, size, mtime_ns):
+    # Size and mtime select the cache entry; file contents select the JIT key.
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 @dataclass(frozen=True)
 class NPUOptions:
     debug: bool = False
@@ -1153,7 +1163,13 @@ class AscendBackend(BaseBackend):
     @functools.lru_cache()
     def hash(self):
         # TODO fetch compiler version
-        version_key = self.target
+        bitcode = get_structured_permutation_bitcode()
+        if bitcode.is_file():
+            stat = bitcode.stat()
+            implementation = _permutation_bitcode_hash(str(bitcode), stat.st_size, stat.st_mtime_ns)
+        else:
+            implementation = "missing-permutation-bitcode"
+        version_key = (self.target, implementation)
         return str(version_key)
 
     def get_module_map(self) -> Dict[str, ModuleType]:

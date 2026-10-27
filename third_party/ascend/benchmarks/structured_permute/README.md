@@ -1,0 +1,110 @@
+# Ascend split/join correctness and performance
+
+This suite compares compiler-generated split/join with an independent Ascend C
+vector implementation. It contains no FFT code or size-specific FFT rewrite.
+
+## What is measured
+
+| Case | Work per row | Observable outputs |
+|---|---|---|
+| `split` | Deinterleave `2Q` elements | Both channels |
+| `join` | Interleave two independent `Q`-element inputs | Interleaved result |
+| `nested` | Transpose `(4,Q)`, split twice, reconstruct | Transpose, four channels, reconstruction |
+
+Both implementations read the same inputs and produce the same outputs. The AIV
+reference uses `GatherMask` for split and vector `Gather` for join/transpose.
+Its index-table HBM load is included. It is a vector reference, not a hardware
+peak-throughput claim. `aiv.cpp` treats values as raw 16/32-bit words.
+
+Each run checks every output before timing. After graph capture it clears all
+outputs, replays the graph, and checks them again. Native launches resolve the
+current stream inside the launch callback so they are captured on the graph's
+stream. Timing uses NPU events around repeated graph replay; Python/ctypes launch
+overhead is excluded. JSON contains all timing rounds and replay verification.
+
+## Build and run
+
+Use a rebuilt Ascend FlagTree package and its matching patched FLIR dependency.
+The CANN installation is not modified. Select a free NPU and run one case per
+process: a runtime device exception can invalidate that process's NPU context.
+
+```bash
+source /usr/local/Ascend/cann-9.0.0/set_env.sh
+export FLAGTREE_BACKEND=ascend TRITON_BACKEND=torch_npu
+export TRITON_JIT_BACKEND=NPU TRITON_ASCEND_ARCH=Ascend910B4
+export TORCH_DEVICE_BACKEND_AUTOLOAD=0 PYTHONNOUSERSITE=1
+export ASCEND_VISIBLE_DEVICES=6 ASCEND_RT_VISIBLE_DEVICES=6 NPU_VISIBLE_DEVICES=6
+export TRITON_ALL_BLOCKS_PARALLEL=0
+export TRITON_NPU_COMPILER_PATH=/usr/local/Ascend/cann-9.0.0/tools/bishengir/bin
+# For an isolated in-tree build (adjust the platform/Python suffix):
+export PYTHONPATH="$PWD/build/lib.linux-aarch64-cpython-311"
+export TRITON_CACHE_DIR=/tmp/structured-permute-cache
+bench=third_party/ascend/benchmarks/structured_permute
+out=/tmp/structured-permute-results
+mkdir -p "$out"
+cmake -S "$bench" -B "$out/aiv-build" -DCMAKE_BUILD_TYPE=Release \
+  -DASCEND_CANN_PACKAGE_PATH=/usr/local/Ascend/cann-9.0.0 -DSOC_VERSION=Ascend910B4
+cmake --build "$out/aiv-build" -j8
+
+for impl in triton aiv; do
+  for case in split join nested; do
+    for q in 32 256 1024; do
+      python "$bench/bench.py" --impl "$impl" --case "$case" --q "$q" \
+        --batch 2048 --aiv-blocks 2048 --dtype float32 \
+        --library "$out/aiv-build/libpermute_reference.so" \
+        --output "$out/$impl-$case-q$q.json"
+    done
+  done
+done
+```
+
+`--aiv-blocks 2048` matches the Triton logical grid. The default AIV grid is a
+persistent 40-block loop; report that separately. Use `--dtype float16`,
+`bfloat16`, `int16`, or `int32` for the other word types. `--dump-dir` saves the
+Triton compiler stages before timing. Incorrect runs raise and produce no
+successful timing JSON.
+
+## Regression tests
+
+From the FlagTree root, under the same environment:
+
+```bash
+pytest -q third_party/ascend/unittest/pytest_ut/test_split_join_layout.py -x
+pytest -q third_party/ascend/unittest/pytest_ut/test_split.py \
+  third_party/ascend/unittest/pytest_ut/test_interleave.py \
+  third_party/ascend/unittest/pytest_ut/test_interleave_optimizaiton.py \
+  third_party/ascend/unittest/pytest_ut/test_ir_builder.py -x
+pytest -q third_party/ascend/unittest/pytest_ut/test_custom_bytecode_compat.py -x
+```
+
+The layout suite covers rank/shape changes, multiple consumers, independent and
+swapped joins, input/output strides and offsets, output guard elements, computed
+values, masked tails, constants, and exact floating-point bit patterns including
+NaN payloads. It also exercises the native large-transpose fallback.
+
+## Compiler implementation and limits
+
+The FLIR pass first folds exact inverse `join(split(x))` pairs and moves channel
+selection before transpose when the shape identity proves it safe. Small-axis
+static transposes use vector index arithmetic and a private UB permutation
+primitive; large transposes retain native tiling. These are static permutations,
+not dynamic `tl.gather` operations.
+
+Private device implementations are built into FlagTree's packaged
+`custom_ops.bc` and linked automatically. Split uses `vreducev2` for packed data;
+a gather honors the physical UB strides chosen downstream. An older CANN custom
+operation schema is adapted at the bytecode boundary. After CANN has planned
+buffers and synchronization, a private-operation-only ABI adapter emits device
+function calls for the installed hivmc. It preserves existing allocations,
+strides and synchronization; no installed CANN template or binary is patched.
+
+The vector fast path covers supported 16/32-bit values with a packed destination,
+including a strided source. Narrow computed split values are widened to 16 bits
+and truncated afterward. Nonunit destination/index/scratch strides currently
+have a synchronized scalar correctness path. Do not claim vector performance
+for those layouts. Tiny two-scalar joins use two exact element insertions.
+
+Static permutation indices are bounded to 4096 entries (16 KiB); other shapes
+retain native transpose lowering. This suite verifies the listed cases and does
+not establish correctness or performance for every Triton operation/dtype or
+other CANN/SoC versions.

@@ -54,24 +54,32 @@ def test_split_join_preserves_float_bits(dtype, xs, ys):
     n, a, b = raw.numel(), 4, 16
     storage = torch.zeros(n*xs+2, dtype=bits_dtype)
     storage[1:1+n*xs:xs] = raw
-    x = storage.view(dtype).npu()[1:1+n*xs:xs]
+    # Transfer/read integer backing storage. torch_npu's floating-point
+    # materialization of a strided view may canonicalize NaNs on its own.
+    xraw = storage.npu()
+    x = xraw.view(dtype)[1:1+n*xs:xs]
     zraw = raw[:n//2].flip(0).contiguous()
-    z = zraw.view(dtype).npu()
-    out = torch.zeros(n*ys+2, dtype=bits_dtype).view(dtype).npu()
+    z = zraw.npu().view(dtype)
+    out_raw = torch.zeros(n*ys+2, dtype=bits_dtype).npu()
+    out = out_raw.view(dtype)
     y = out[1:1+n*ys:ys]
-    ao, bo = [torch.empty(n//2, dtype=dtype, device='npu') for _ in range(2)]
-    to, jo = [torch.empty(n, dtype=dtype, device='npu') for _ in range(2)]
+    a_raw, b_raw = [torch.empty(n//2, dtype=bits_dtype, device='npu') for _ in range(2)]
+    t_raw, j_raw = [torch.empty(n, dtype=bits_dtype, device='npu') for _ in range(2)]
+    ao, bo, to, jo = [v.view(dtype) for v in (a_raw, b_raw, t_raw, j_raw)]
+    assert x.data_ptr() == xraw.data_ptr() + x.element_size()
+    assert y.data_ptr() == out_raw.data_ptr() + y.element_size()
     _layout[(1,)](x, z, y, ao, bo, to, jo, A=a, B=b, XS=xs, YS=ys, SWAP=True)
     ref = raw.reshape(a, 2, b)
     ra, rb = ref[:, 0, :], ref[:, 1, :]
     expected = [torch.stack((rb, ra), dim=-1).reshape(-1), ra.reshape(-1), rb.reshape(-1),
                 ref.permute(0, 2, 1).contiguous().reshape(-1),
                 torch.stack((ra, zraw.reshape(a, b)), dim=-1).reshape(-1)]
-    for value, bits in zip((y, ao, bo, to, jo), expected):
-        assert torch.equal(value.cpu().view(bits_dtype), bits)
+    actual = [out_raw.cpu()[1:1+n*ys:ys]] + [v.cpu() for v in (a_raw, b_raw, t_raw, j_raw)]
+    for name, value, bits in zip(('join', 'split0', 'split1', 'transpose', 'independent_join'), actual, expected):
+        assert torch.equal(value, bits), (name, value, bits)
     guards = torch.ones(n*ys+2, dtype=torch.bool)
     guards[1:1+n*ys:ys] = False
-    assert torch.all(out.cpu().view(bits_dtype)[guards] == 0)
+    assert torch.all(out_raw.cpu()[guards] == 0)
 
 
 @pytest.mark.parametrize('q', [1, 8, 64])

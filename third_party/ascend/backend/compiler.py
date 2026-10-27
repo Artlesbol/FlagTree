@@ -223,7 +223,6 @@ def linalg_to_bc_by_triton_mlir_opt(linalg: str, metadata, opt):
 
         triton_mlir_opt_path = _get_triton_mlir_opt_path()
         custom_compat = "hivm.hir.custom" in linalg
-        metadata["cann_custom_bytecode_compat"] = custom_compat
         compat_options = (["--export-cann-custom-ops", "--allow-unregistered-dialect"]
                           if custom_compat else [])
 
@@ -263,6 +262,8 @@ def _split_mlir_attributes(text):
             quoted = True
         elif char in "([{<":
             depth += 1
+        elif char == ">" and i and text[i - 1] == "-":
+            pass  # Function types and affine maps contain -> inside brackets.
         elif char in ")]}>":
             depth -= 1
         elif char == "," and depth == 0:
@@ -318,7 +319,7 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
         subprocess.run([
             bishengir_opt_path,
             bc_path,
-            *(["--allow-unregistered-dialect"] if metadata.get("cann_custom_bytecode_compat") else []),
+            "--allow-unregistered-dialect",
             "--mlir-print-debuginfo",
             "-o",
             mlir_path,
@@ -326,7 +327,9 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
 
         # Read the generated MLIR text
         linalg_text = Path(mlir_path).read_text()
-        if metadata.get("cann_custom_bytecode_compat"):
+        # Detect the transport in the artifact itself, including when the
+        # preceding stage was loaded from a partial compiler cache.
+        if '"cann_compat.custom"(' in linalg_text:
             linalg_text = _restore_cann_custom_ops(linalg_text)
 
         if opt.debug:

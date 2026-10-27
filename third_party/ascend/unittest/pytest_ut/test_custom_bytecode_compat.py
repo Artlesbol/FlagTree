@@ -91,3 +91,16 @@ def test_late_private_abi_keeps_layouts_and_sync():
 def test_late_unrelated_operations_unchanged():
     text = '"hivm.hir.custom"(%a) {symbol = "user_kernel"} : (tensor<8xf32>) -> ()'
     assert late.lower_private_ops(text) == text
+
+
+def test_late_storage_conversion_abi():
+    for symbol, elements in [('byte_to_word', ('i8', 'i16', 'f16')),
+                             ('word_to_byte', ('i16', 'i8', 'f16'))]:
+        types = ', '.join(f'memref<64x{e}, #hivm.address_space<ub>>' for e in elements)
+        text = ('"builtin.module"() ({\n'
+                '    "hivm.hir.custom"(%a, %b, %tmp) '
+                f'{{symbol = "custom_flagtree_{symbol}"}} : ({types}) -> ()\n'
+                '}) : () -> ()\n')
+        result = late.lower_private_ops(text)
+        assert result.count('memref.cast') == 3
+        assert f'func.call @custom_flagtree_{symbol}' in result

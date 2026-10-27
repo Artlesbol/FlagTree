@@ -176,6 +176,9 @@ def _merge_xpu_packages(existing_packages):
             packages.append(package)
             seen.add(package)
 
+    for package in find_packages(where=FLAGTREE_PYTHON_ROOT, include=["triton", "triton.*"]):
+        add(package)
+
     for package in existing_packages:
         add(package)
 

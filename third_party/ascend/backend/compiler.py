@@ -248,6 +248,53 @@ def linalg_to_bc_by_triton_mlir_opt(linalg: str, metadata, opt):
         return bc_data
 
 
+def _split_mlir_attributes(text):
+    """Split an attribute dictionary without splitting nested values."""
+    fields, start, depth, quoted, escaped = [], 0, 0, False, False
+    for i, char in enumerate(text):
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "([{<":
+            depth += 1
+        elif char in ")]}>":
+            depth -= 1
+        elif char == "," and depth == 0:
+            fields.append(text[start:i].strip())
+            start = i + 1
+    fields.append(text[start:].strip())
+    return [field for field in fields if field]
+
+
+def _restore_cann_custom_ops(text):
+    lines = []
+    marker = '"cann_compat.custom"('
+    for line in text.splitlines(keepends=True):
+        if marker not in line:
+            lines.append(line)
+            continue
+        begin = line.index(" {", line.index(marker))
+        end = line.rindex("} :")
+        fields = _split_mlir_attributes(line[begin+2:end])
+        properties, attrs = None, []
+        for field in fields:
+            if field.startswith("cann_compat.properties = "):
+                properties = field.split("=", 1)[1].strip()
+            else:
+                attrs.append(field)
+        if properties is None:
+            raise RuntimeError("Custom-op transport is missing its properties")
+        prefix = line[:begin].replace('"cann_compat.custom"', '"hivm.hir.custom"')
+        lines.append(prefix + " <" + properties + "> {" + ", ".join(attrs) + "}" + line[end+1:])
+    return "".join(lines)
+
+
 def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
     """
     Convert MLIR Bytecode to MLIR text format using bishengir-opt.
@@ -280,7 +327,7 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
         # Read the generated MLIR text
         linalg_text = Path(mlir_path).read_text()
         if metadata.get("cann_custom_bytecode_compat"):
-            linalg_text = linalg_text.replace('"cann_compat.custom"', '"hivm.hir.custom"')
+            linalg_text = _restore_cann_custom_ops(linalg_text)
 
         if opt.debug:
             dump_manager = get_dump_manager(metadata["hash"])

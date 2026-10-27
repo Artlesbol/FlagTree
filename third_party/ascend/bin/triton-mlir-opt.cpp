@@ -61,9 +61,11 @@ struct ExportCANNCustomOpsPass
       state.addTypes(op->getResultTypes());
       mlir::NamedAttrList attrs(op->getAttrs());
       if (auto properties = mlir::dyn_cast_or_null<mlir::DictionaryAttr>(
-              op->getPropertiesAsAttribute()))
+              op->getPropertiesAsAttribute())) {
         for (auto attr : properties)
-          attrs.set(attr.getName(), attr.getValue());
+          attrs.erase(attr.getName());
+        attrs.set("cann_compat.properties", properties);
+      }
       state.addAttributes(attrs);
       auto *transport = builder.create(state);
       op->replaceAllUsesWith(transport->getResults());

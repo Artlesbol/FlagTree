@@ -75,6 +75,7 @@ pytest -q third_party/ascend/unittest/pytest_ut/test_split.py \
   third_party/ascend/unittest/pytest_ut/test_interleave_optimizaiton.py \
   third_party/ascend/unittest/pytest_ut/test_ir_builder.py -x
 pytest -q third_party/ascend/unittest/pytest_ut/test_custom_bytecode_compat.py -x
+pytest -q third_party/ascend/unittest/pytest_ut/test_split_join_values.py -x
 ```
 
 The layout suite covers rank/shape changes, multiple consumers, independent and
@@ -90,6 +91,10 @@ static transposes use vector index arithmetic and a private UB permutation
 primitive; large transposes retain native tiling. These are static permutations,
 not dynamic `tl.gather` operations.
 
+Floating-point joins move values as same-width integers so concat/copy cannot
+canonicalize NaN payloads. The c220 vector path is enabled for Ascend 910B targets;
+other architectures and encoded join layouts retain the existing lowering.
+
 Private device implementations are built into FlagTree's packaged
 `custom_ops.bc` and linked automatically. Split uses `vreducev2` for packed data;
 a gather honors the physical UB strides chosen downstream. An older CANN custom
@@ -99,8 +104,9 @@ function calls for the installed hivmc. It preserves existing allocations,
 strides and synchronization; no installed CANN template or binary is patched.
 
 The vector fast path covers supported 16/32-bit values with a packed destination,
-including a strided source. Narrow computed split values are widened to 16 bits
-and truncated afterward. Nonunit destination/index/scratch strides currently
+including a strided source. Narrow byte values use private byte/word storage conversion around permutations,
+which prevents CANN from moving a flat cast back into its broken sub-block 2D
+cast path. Nonunit destination/index/scratch strides currently
 have a synchronized scalar correctness path. Do not claim vector performance
 for those layouts. Tiny two-scalar joins use two exact element insertions.
 

@@ -365,7 +365,7 @@ def compile(src, target=None, options=None, _env_vars=None):
             module=next_module,
             metadata=metadata,
         )
-        # If TRITON_STORE_BINARY_ONLY is 1, only store cubin/hsaco/json
+        # Binary-only caches must retain this backend's executable format.
         if (not store_only_binary) or (ext in ("cubin", "hsaco", "json", backend.binary_ext)):
             metadata_group[ir_filename] = fn_cache_manager.put(next_module, ir_filename)
         if fn_dump_manager is not None:

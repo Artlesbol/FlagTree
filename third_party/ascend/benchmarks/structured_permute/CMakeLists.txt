@@ -15,7 +15,15 @@ if(FLAGTREE_DEVICE_BITCODE)
   if(NOT EXISTS "${FLAGTREE_DEVICE_BITCODE}")
     message(FATAL_ERROR "Missing FLAGTREE_DEVICE_BITCODE: ${FLAGTREE_DEVICE_BITCODE}")
   endif()
-  ascendc_library(ub_contract_device STATIC ub_contract.cpp)
+  # Put dependency digests into the primary source consumed by the SDK's
+  # external build. Replacing bitcode must rebuild the test device binary.
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${FLAGTREE_DEVICE_BITCODE}" "${CMAKE_CURRENT_SOURCE_DIR}/ub_contract.cpp")
+  file(SHA256 "${FLAGTREE_DEVICE_BITCODE}" _ub_bc_hash)
+  file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/ub_contract.cpp" _ub_src_hash)
+  file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ub_contract_versioned.cpp"
+    CONTENT "// bitcode: ${_ub_bc_hash}\n// source: ${_ub_src_hash}\n#include \"${CMAKE_CURRENT_SOURCE_DIR}/ub_contract.cpp\"\n" @ONLY)
+  ascendc_library(ub_contract_device STATIC "${CMAKE_CURRENT_BINARY_DIR}/ub_contract_versioned.cpp")
   ascendc_compile_options(ub_contract_device PRIVATE
     "SHELL:-Xclang -mlink-builtin-bitcode -Xclang ${FLAGTREE_DEVICE_BITCODE}"
     --cce-auto-sync=off)

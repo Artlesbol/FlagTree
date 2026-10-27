@@ -17,12 +17,14 @@ __aiv__ __attribute__((always_inline)) void structured_gather(
   auto src_ptr = reinterpret_cast<__ubuf__ Bits *>(src->aligned + src->offset);
   auto dst_ptr = reinterpret_cast<__ubuf__ Bits *>(dst->aligned + dst->offset);
   auto idx_ptr = indices->aligned + indices->offset;
+  auto address_ptr = addresses->aligned + addresses->offset;
 
   // This branch also preserves holes in a strided destination. The 910B
   // vector ISA has no general scatter exposed by the CANN SDK. The common
   // packed case below has no data-length scalar loop, even for strided src.
   if (indices->strides[0] != 1 || addresses->strides[0] != 1 ||
-      dst->strides[0] != 1) {
+      dst->strides[0] != 1 || !isAddress32ByteAligned(dst_ptr) ||
+      !isAddress32ByteAligned(idx_ptr) || !isAddress32ByteAligned(address_ptr)) {
     INTRINSIC(set_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
     INTRINSIC(wait_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
     for (int64_t i = 0; i < n; ++i)
@@ -74,7 +76,9 @@ __aiv__ __attribute__((always_inline)) void structured_split(
   auto in = reinterpret_cast<__ubuf__ Bits *>(src->aligned + src->offset);
   auto a = reinterpret_cast<__ubuf__ Bits *>(lhs->aligned + lhs->offset);
   auto b = reinterpret_cast<__ubuf__ Bits *>(rhs->aligned + rhs->offset);
-  if (src->strides[0] == 1 && lhs->strides[0] == 1 && rhs->strides[0] == 1) {
+  bool alignedOutputs = isAddress32ByteAligned(a) && isAddress32ByteAligned(b);
+  if (src->strides[0] == 1 && lhs->strides[0] == 1 && rhs->strides[0] == 1 &&
+      isAddress32ByteAligned(in) && alignedOutputs) {
     INTRINSIC_NO_ARGS(set_mask_count);
     INTRINSIC(set_vector_mask, 0, 2 * n);
     INTRINSIC(vreducev2, a, in, in, 1, 1, 1, 8, 0);
@@ -82,7 +86,8 @@ __aiv__ __attribute__((always_inline)) void structured_split(
     INTRINSIC_NO_ARGS(set_mask_norm);
     return;
   }
-  if (lhs->strides[0] == 1 && rhs->strides[0] == 1 && addresses->strides[0] == 1) {
+  if (lhs->strides[0] == 1 && rhs->strides[0] == 1 && addresses->strides[0] == 1 &&
+      alignedOutputs && isAddress32ByteAligned(addresses->aligned + addresses->offset)) {
     const int32_t scale = src->strides[0] * sizeof(T);
     const int32_t base = static_cast<int32_t>(reinterpret_cast<intptr_t>(in));
     auto addr = addresses->aligned + addresses->offset;

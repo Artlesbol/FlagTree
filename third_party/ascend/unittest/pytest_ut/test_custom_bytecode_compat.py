@@ -129,3 +129,19 @@ def test_join_lowering_policy_is_validated_and_hashed():
     assert len({option.hash() for option in options}) == 3
     with pytest.raises(ValueError, match='structured_join_lowering'):
         backend.parse_options({'structured_join_lowering': 'unknown'})
+
+
+@pytest.mark.parametrize('missing', ['none', 'metadata', 'binary', 'empty_binary', 'directory'])
+def test_kernel_cache_completeness(tmp_path, missing):
+    from triton.runtime.cache import _is_complete_kernel_cache
+    meta, binary = tmp_path/'kernel.json', tmp_path/'kernel.npubin'
+    meta.write_text('{}')
+    binary.write_bytes(b'ELF')
+    group = {'kernel.json': str(meta), 'kernel.npubin': str(binary)}
+    if missing == 'metadata': meta.unlink()
+    elif missing == 'binary': binary.unlink()
+    elif missing == 'empty_binary': binary.write_bytes(b'')
+    elif missing == 'directory':
+        binary.unlink()
+        binary.mkdir()
+    assert _is_complete_kernel_cache(group, 'kernel.json', 'kernel.npubin') == (missing == 'none')

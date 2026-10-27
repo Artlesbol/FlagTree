@@ -60,10 +60,12 @@ def suite(args):
     cache = root/'cache'
     assert not cache.exists(), 'Use a new result directory; cold-cache checks must really be cold'
     records = {}
-    def run(name, auto, explicit=None, bitcode=None):
+    def run(name, auto, explicit=None, bitcode=None, binary_only=False):
         env = os.environ.copy()
         env.pop('TRITON_ALWAYS_COMPILE', None)
-        env['TRITON_CACHE_DIR'] = str(cache)
+        env['TRITON_CACHE_DIR'] = str(root/'cache-binary-only' if binary_only else cache)
+        if binary_only: env['TRITON_STORE_BINARY_ONLY'] = '1'
+        else: env.pop('TRITON_STORE_BINARY_ONLY', None)
         env['TRITON_ALL_BLOCKS_PARALLEL'] = str(auto)
         cmd = [sys.executable, str(Path(__file__).resolve()), '--worker', '--output', str(root/(name+'.json'))]
         if explicit is not None: cmd += ['--explicit', str(explicit)]
@@ -96,7 +98,7 @@ def suite(args):
     partial = run('partial-final-binary', 1)
     assert partial['hash'] == cold1['hash']
     assert 'bishengir-compile' in partial['compiler_calls']
-    assert 'triton-mlir-opt' not in partial['compiler_calls']
+    assert partial['outputs_verified'] and partial['uses_structured_permutation']
 
     # Link a valid, unused function into a private copy of the device library.
     from triton.backends.ascend.compiler import get_structured_permutation_bitcode
@@ -112,6 +114,11 @@ def suite(args):
     assert changed_hot['hash'] == changed['hash'] and not changed_hot['compiler_calls']
     restored = run('restored-device-bitcode', 1)
     assert restored['hash'] == cold1['hash'] and not restored['compiler_calls']
+    binary_cold = run('binary-only-cold', 0, binary_only=True)
+    binary_hot = run('binary-only-hot', 0, binary_only=True)
+    assert binary_cold['hash'] == binary_hot['hash'] and not binary_hot['compiler_calls']
+    assert any(name.endswith('.npubin') for name in binary_cold['metadata_group'])
+    assert not any(name.endswith(('.ttir', '.ttadapter', '.mlirbc', '.bcmlir')) for name in binary_cold['metadata_group'])
     (root/'summary.json').write_text(json.dumps(dict(status='pass', cases=len(records), records=records), indent=2)+'\n')
     print(f'PASS: {len(records)} cross-process cache contracts', flush=True)
 

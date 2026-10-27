@@ -222,12 +222,17 @@ def linalg_to_bc_by_triton_mlir_opt(linalg: str, metadata, opt):
         Path(ttadapter_path).write_text(linalg)
 
         triton_mlir_opt_path = _get_triton_mlir_opt_path()
+        custom_compat = "hivm.hir.custom" in linalg
+        metadata["cann_custom_bytecode_compat"] = custom_compat
+        compat_options = (["--export-cann-custom-ops", "--allow-unregistered-dialect"]
+                          if custom_compat else [])
 
         # The --emit-bytecode flag ensures output is in BC format
         subprocess.run([
             triton_mlir_opt_path,
             ttadapter_path,
             "--emit-bytecode",
+            *compat_options,
             "-o",
             bc_path,
         ], check=True, capture_output=True, text=True)
@@ -266,6 +271,7 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
         subprocess.run([
             bishengir_opt_path,
             bc_path,
+            *(["--allow-unregistered-dialect"] if metadata.get("cann_custom_bytecode_compat") else []),
             "--mlir-print-debuginfo",
             "-o",
             mlir_path,
@@ -273,6 +279,8 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
 
         # Read the generated MLIR text
         linalg_text = Path(mlir_path).read_text()
+        if metadata.get("cann_custom_bytecode_compat"):
+            linalg_text = linalg_text.replace('"cann_compat.custom"', '"hivm.hir.custom"')
 
         if opt.debug:
             dump_manager = get_dump_manager(metadata["hash"])

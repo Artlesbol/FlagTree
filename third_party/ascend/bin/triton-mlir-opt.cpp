@@ -29,10 +29,47 @@
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllExtensions.h"
 #include "mlir/InitAllPasses.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "llvm/Support/InitLLVM.h"
 
+namespace {
+// CANN 9 and current MLIR disagree on hivm.custom's bytecode properties.
+// Transport this op as an opaque attribute dictionary, then restore its name
+// after the CANN reader has converted the surrounding IR to its own syntax.
+// No optimization is performed while the operation has this temporary name.
+struct ExportCANNCustomOpsPass
+    : mlir::PassWrapper<ExportCANNCustomOpsPass,
+                       mlir::OperationPass<mlir::ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ExportCANNCustomOpsPass)
+  llvm::StringRef getArgument() const final { return "export-cann-custom-ops"; }
+  llvm::StringRef getDescription() const final {
+    return "Transport custom operations across the CANN bytecode boundary";
+  }
+  void runOnOperation() final {
+    llvm::SmallVector<mlir::Operation *> customOps;
+    getOperation().walk([&](mlir::Operation *op) {
+      if (op->getName().getStringRef() == "hivm.hir.custom")
+        customOps.push_back(op);
+    });
+    for (auto *op : customOps) {
+      mlir::OpBuilder builder(op);
+      mlir::OperationState state(op->getLoc(), "cann_compat.custom");
+      state.addOperands(op->getOperands());
+      state.addTypes(op->getResultTypes());
+      state.addAttributes(op->getAttrs());
+      auto *transport = builder.create(state);
+      op->replaceAllUsesWith(transport->getResults());
+      op->erase();
+    }
+  }
+};
+} // namespace
+
 int main(int argc, char **argv) {
+  mlir::PassRegistration<ExportCANNCustomOpsPass>();
   // Register all MLIR dialects and passes
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);

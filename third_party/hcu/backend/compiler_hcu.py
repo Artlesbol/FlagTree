@@ -2,7 +2,7 @@ from triton.backends.compiler import BaseBackend, GPUTarget, Language
 from triton._C.libtriton import ir, passes, llvm, hcu, distributed, tle
 from triton import knobs
 from triton.runtime.errors import HSACOError
-from triton.runtime import DistributedRtContext
+from triton.runtime._distributed import DistributedRtContext
 from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 from types import ModuleType

@@ -123,3 +123,43 @@ def test_unit_stride_masked_byte_load_without_split(dtype):
     storage = torch.full((4,), 111, dtype=dtype, device='npu')
     _unit_masked_load[(1,)](x, storage[1:3])
     assert storage.cpu().tolist() == [111, 1, 0, 111]
+
+
+@triton.jit
+def _dense_split_bits(X, A, B, Q: tl.constexpr):
+    values = tl.load(X + tl.arange(0, 2*Q))
+    a, b = tl.split(tl.reshape(values, (Q, 2)))
+    i = tl.arange(0, Q)
+    tl.store(A + i, a)
+    tl.store(B + i, b)
+
+
+@triton.jit
+def _dense_join_bits(A, B, Y, Q: tl.constexpr):
+    i = tl.arange(0, Q)
+    a = tl.load(A + i)
+    b = tl.load(B + i)
+    joined = tl.reshape(tl.join(a, b), (2*Q,))
+    tl.store(Y + tl.arange(0, 2*Q), joined)
+
+
+@pytest.mark.parametrize('dtype', [torch.float16, torch.bfloat16, torch.float32])
+def test_dense_native_split_join_bits(dtype):
+    bits_dtype = torch.int32 if dtype == torch.float32 else torch.int16
+    patterns = ([0, -2147483648, 0x7fc00001, -8388608, 0x7f800000, 1, -1, 12345]
+                if dtype == torch.float32 else
+                [0, -32768, 0x7fc1, -128, 0x7f80, 1, -1, 12345]
+                if dtype == torch.bfloat16 else
+                [0, -32768, 0x7e01, -1024, 0x7c00, 1, -1, 12345])
+    raw = torch.tensor(patterns, dtype=bits_dtype).repeat(8)
+    q = raw.numel()//2
+    x = raw.npu()
+    a, b = [torch.empty(q, dtype=bits_dtype, device='npu') for _ in range(2)]
+    split = _dense_split_bits[(1,)](x.view(dtype), a.view(dtype), b.view(dtype), Q=q)
+    assert torch.equal(a.cpu(), raw[::2])
+    assert torch.equal(b.cpu(), raw[1::2])
+    assert not getattr(split.metadata, 'uses_structured_permutation', False)
+    y = torch.empty_like(x)
+    join = _dense_join_bits[(1,)](a.view(dtype), b.view(dtype), y.view(dtype), Q=q)
+    assert torch.equal(y.cpu(), raw)
+    assert not getattr(join.metadata, 'uses_structured_permutation', False)

@@ -1,6 +1,6 @@
 """One case/process. Exact checks precede timing; incorrect runs get no timing.
 
-Baseline rows are contiguous float32, Q >= 32, a power of two. Physical strided
+Baseline rows contain 16-bit or 32-bit elements, Q >= 32, a power of two. Physical strided
 layouts are exercised separately by compiler regressions: tl.split's logical
 axis must not be confused with HBM strides or UB strides chosen downstream.
 """
@@ -101,9 +101,11 @@ def main():
             i = torch.arange(4*q)
             idx = ((i // 4) + (i % 4) * q).to(torch.int32) * x.element_size()
         idx = idx.npu()
-        stream = torch.npu.current_stream().npu_stream
         blocks = args.aiv_blocks or min(batch, 40)
         def launch():
+            # torch.npu.graph may switch streams on entry. Resolve it here,
+            # otherwise the native kernel can escape graph capture entirely.
+            stream = torch.npu.current_stream().npu_stream
             rc = call(blocks, stream, x.data_ptr(), z.data_ptr(), y.data_ptr(),
                       idx.data_ptr(), t.data_ptr(), j.data_ptr(), q, batch,
                       {"split": 0, "join": 1, "nested": 2}[args.case], x.element_size())
@@ -144,9 +146,24 @@ def main():
     torch.npu.synchronize()
     # Device graph makes the timing independent of Python vs ctypes launch cost.
     graph = torch.npu.NPUGraph()
+    initial_stream = torch.npu.current_stream().npu_stream
     with torch.npu.graph(graph):
+        capture_stream = torch.npu.current_stream().npu_stream
         launch()
     torch.npu.synchronize()
+    # Prove that graph replay executes the kernel, including every side output.
+    sentinel = float("nan") if dtype.is_floating_point else -111
+    y.fill_(sentinel)
+    if args.case == "nested":
+        t.fill_(sentinel)
+        j.fill_(sentinel)
+    torch.npu.synchronize()
+    graph.replay()
+    torch.npu.synchronize()
+    torch.testing.assert_close(y.cpu(), expected, rtol=0, atol=0)
+    if args.case == "nested":
+        torch.testing.assert_close(t.cpu(), transposed, rtol=0, atol=0)
+        torch.testing.assert_close(j.cpu(), transposed, rtol=0, atol=0)
     times = []
     for _ in range(args.rounds):
         start, end = torch.npu.Event(enable_timing=True), torch.npu.Event(enable_timing=True)
@@ -161,6 +178,8 @@ def main():
                   us_per_row=statistics.median(times)/batch, triton=triton.__version__,
                   cache=os.environ.get("TRITON_CACHE_DIR"), timing="device_graph_events",
                   logical_grid=blocks if args.impl == "aiv" else batch,
+                  replay_outputs_verified=True,
+                  capture_stream_changed=capture_stream != initial_stream,
                   compiler_metadata=compiled.metadata._asdict() if args.impl == "triton" else None,
                   aiv_join="vector_gather_including_index_load")
     args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -6,6 +6,7 @@ import pytest
 import torch_npu  # registers torch.npu for the suite's device fixture
 
 compiler = importlib.import_module("triton.backends.ascend.compiler")
+late = importlib.import_module("triton.backends.ascend.structured_permute_ir")
 
 
 def test_nested_attribute_split():
@@ -54,3 +55,39 @@ def test_real_bytecode_roundtrip_without_stage_metadata():
     assert "hivm.hir.custom" in restored
     assert "cann_compat.custom" not in restored
     assert "custom_roundtrip_test" in restored
+
+
+def test_late_private_abi_keeps_layouts_and_sync():
+    ub = '#hivm.address_space<ub>'
+    data = f'memref<16xf16, strided<[16], offset: 3>, {ub}>'
+    index = f'memref<16xi32, {ub}>'
+    op = ('    "hivm.hir.custom"(%a, %i, %b, %tmp) '
+          '<{name = "flagtree.structured_gather", operandSegmentSizes = array<i32: 2, 2>}> '
+          '{symbol = "custom_flagtree_stride_gather_half"} : '
+          f'({data}, {index}, {data}, {index}) -> ()')
+    text = '"builtin.module"() ({\n  // keep synchronization\n' + op + '\n}) : () -> ()\n'
+    result = late.lower_private_ops(text)
+    assert '"hivm.hir.custom"' not in result
+    assert result.count('memref.cast') == 4
+    assert f': {data} to memref<?xf16, strided<[?], offset: ?>, {ub}>' in result
+    assert 'func.call @custom_flagtree_stride_gather_half' in result
+    assert result.count('func.func private @custom_flagtree_stride_gather_half') == 1
+    assert '// keep synchronization' in result
+    # Repeated uses share a declaration, and pre-existing SSA names cannot collide.
+    repeated = text.replace(op, op + '\n' + op).replace('// keep', '// %flagtree_abi_ keep')
+    result = late.lower_private_ops(repeated)
+    assert result.count('func.func private @custom_flagtree_stride_gather_half') == 1
+    assert '%flagtree_abi__0' in result
+    with pytest.raises(ValueError, match='rank-one UB'):
+        late.lower_private_ops(text.replace('16xf16', '4x4xf16'))
+    with pytest.raises(ValueError, match='rank-one UB'):
+        late.lower_private_ops(text.replace('<ub>', '<gm>'))
+    with pytest.raises(ValueError, match='disagree'):
+        late.lower_private_ops(text.replace('_gather_half', '_gather_float'))
+    with pytest.raises(ValueError, match='result-free'):
+        late.lower_private_ops(text.replace('-> ()\n})', '-> (tensor<16xf16>)\n})'))
+
+
+def test_late_unrelated_operations_unchanged():
+    text = '"hivm.hir.custom"(%a) {symbol = "user_kernel"} : (tensor<8xf32>) -> ()'
+    assert late.lower_private_ops(text) == text

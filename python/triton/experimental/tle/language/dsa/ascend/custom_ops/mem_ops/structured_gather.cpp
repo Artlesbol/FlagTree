@@ -3,6 +3,7 @@
 // Private compiler primitive: logical element indices, arbitrary UB strides.
 #include "Utils.h"
 #include "Vector/VecUtils.h"
+#include "Vector/Arange/ArangeUtils.h"
 #include <type_traits>
 
 template <typename T>
@@ -63,3 +64,65 @@ REGISTER_STRUCTURED_GATHER(bf16, bfloat16_t)
 REGISTER_STRUCTURED_GATHER(float, float)
 REGISTER_STRUCTURED_GATHER(int16, int16_t)
 REGISTER_STRUCTURED_GATHER(int32, int32_t)
+
+template <typename T>
+__aiv__ __attribute__((always_inline)) void structured_split(
+    memref_t<__ubuf__ T, 1> *src, memref_t<__ubuf__ T, 1> *lhs,
+    memref_t<__ubuf__ T, 1> *rhs, memref_t<__ubuf__ int32_t, 1> *addresses) {
+  using Bits = typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
+  const int64_t n = lhs->sizes[0];
+  auto in = reinterpret_cast<__ubuf__ Bits *>(src->aligned + src->offset);
+  auto a = reinterpret_cast<__ubuf__ Bits *>(lhs->aligned + lhs->offset);
+  auto b = reinterpret_cast<__ubuf__ Bits *>(rhs->aligned + rhs->offset);
+  if (src->strides[0] == 1 && lhs->strides[0] == 1 && rhs->strides[0] == 1) {
+    INTRINSIC_NO_ARGS(set_mask_count);
+    INTRINSIC(set_vector_mask, 0, 2 * n);
+    INTRINSIC(vreducev2, a, in, in, 1, 1, 1, 8, 0);
+    INTRINSIC(vreducev2, b, in, in, 1, 1, 2, 8, 0);
+    INTRINSIC_NO_ARGS(set_mask_norm);
+    return;
+  }
+  if (lhs->strides[0] == 1 && rhs->strides[0] == 1 && addresses->strides[0] == 1) {
+    const int32_t scale = src->strides[0] * sizeof(T);
+    const int32_t base = static_cast<int32_t>(reinterpret_cast<intptr_t>(in));
+    auto addr = addresses->aligned + addresses->offset;
+    arange_1d_core<int32_t>(addr, n, base, 2 * scale);
+    INTRINSIC(pipe_barrier, PIPE_V);
+    INTRINSIC_NO_ARGS(set_mask_count);
+    INTRINSIC(set_vector_mask, 0, n);
+    INTRINSIC(vgather, a, reinterpret_cast<__ubuf__ uint32_t *>(addr), 0, 8, 1);
+    INTRINSIC_NO_ARGS(set_mask_norm);
+    INTRINSIC(pipe_barrier, PIPE_V);
+    vector_eltwise_vs_1d<VectorOpTy::VADDS>(addresses, scale, addresses);
+    INTRINSIC(pipe_barrier, PIPE_V);
+    INTRINSIC_NO_ARGS(set_mask_count);
+    INTRINSIC(set_vector_mask, 0, n);
+    INTRINSIC(vgather, b, reinterpret_cast<__ubuf__ uint32_t *>(addr), 0, 8, 1);
+    INTRINSIC_NO_ARGS(set_mask_norm);
+    return;
+  }
+  INTRINSIC(set_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
+  INTRINSIC(wait_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
+  for (int64_t i = 0; i < n; ++i) {
+    a[i * lhs->strides[0]] = in[2 * i * src->strides[0]];
+    b[i * rhs->strides[0]] = in[(2 * i + 1) * src->strides[0]];
+  }
+  INTRINSIC(set_flag, PIPE_S, PIPE_V, LIB_EVENT_ID0);
+  INTRINSIC(wait_flag, PIPE_S, PIPE_V, LIB_EVENT_ID0);
+}
+
+#define REGISTER_STRUCTURED_SPLIT(SUFFIX, TYPE)                                 \
+  extern "C" __aiv__ __attribute__((always_inline)) void                         \
+      _mlir_ciface_custom_flagtree_split_##SUFFIX(                              \
+          memref_t<__ubuf__ TYPE, 1> *src,                                      \
+          memref_t<__ubuf__ TYPE, 1> *lhs,                                      \
+          memref_t<__ubuf__ TYPE, 1> *rhs,                                      \
+          memref_t<__ubuf__ int32_t, 1> *addresses) {                           \
+    structured_split(src, lhs, rhs, addresses);                                 \
+  }
+
+REGISTER_STRUCTURED_SPLIT(half, half)
+REGISTER_STRUCTURED_SPLIT(bf16, bfloat16_t)
+REGISTER_STRUCTURED_SPLIT(float, float)
+REGISTER_STRUCTURED_SPLIT(int16, int16_t)
+REGISTER_STRUCTURED_SPLIT(int32, int32_t)

@@ -346,7 +346,7 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     # Parse all bitcode paths
     bitcodes = re.findall(BITCODES_REGEX, linalg)
     metadata["bitcodes"] = [val for group in bitcodes for val in group if val]
-    if "custom_flagtree_stride_gather_" in linalg:
+    if any(name in linalg for name in ("custom_flagtree_stride_gather_", "custom_flagtree_split_")):
         # This is a compiler-generated primitive; callers need not import TLE
         # or annotate kernels with a bitcode path. The Ascend build produces
         # this package resource together with the backend.

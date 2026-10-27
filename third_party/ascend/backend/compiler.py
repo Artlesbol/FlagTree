@@ -273,7 +273,7 @@ def _split_mlir_attributes(text):
     return [field for field in fields if field]
 
 
-def _restore_cann_custom_ops(text):
+def _restore_cann_custom_ops(text, segment_arity=3):
     lines = []
     marker = '"cann_compat.custom"('
     for line in text.splitlines(keepends=True):
@@ -291,9 +291,46 @@ def _restore_cann_custom_ops(text):
                 attrs.append(field)
         if properties is None:
             raise RuntimeError("Custom-op transport is missing its properties")
+        if segment_arity == 2:
+            props = _split_mlir_attributes(properties[1:-1])
+            for i, prop in enumerate(props):
+                if prop.startswith("operandSegmentSizes = "):
+                    match = re.fullmatch(r"operandSegmentSizes = array<i32:\s*([\d,\s-]+)>", prop)
+                    if match is None:
+                        raise RuntimeError("Unsupported custom-op operand segment attribute")
+                    sizes = [int(value) for value in match.group(1).split(",")]
+                    if len(sizes) == 3:
+                        if sizes[2] != 0:
+                            raise RuntimeError("This CANN custom-op schema does not support temp-buffer operands")
+                        props[i] = "operandSegmentSizes = array<i32: " + ", ".join(map(str, sizes[:2])) + ">"
+            properties = "{" + ", ".join(props) + "}"
         prefix = line[:begin].replace('"cann_compat.custom"', '"hivm.hir.custom"')
         lines.append(prefix + " <" + properties + "> {" + ", ".join(attrs) + "}" + line[end+1:])
     return "".join(lines)
+
+
+_CANN_CUSTOM_SEGMENT_ARITY = {}
+
+
+def _decode_cann_custom_ops(text, tool, env, tmpdir):
+    """Probe the installed reader's schema, without assuming a CANN version."""
+    stat = os.stat(tool)
+    key = (os.path.realpath(tool), stat.st_size, stat.st_mtime_ns)
+    known = _CANN_CUSTOM_SEGMENT_ARITY.get(key)
+    choices = [known] if known is not None else [3, 2]
+    source = Path(tmpdir) / "kernel.custom.mlir"
+    checked = Path(tmpdir) / "kernel.custom.checked.mlir"
+    for arity in choices:
+        source.write_text(_restore_cann_custom_ops(text, arity))
+        cmd = [tool, str(source), "--allow-unregistered-dialect", "--mlir-print-debuginfo", "-o", str(checked)]
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+        if result.returncode == 0:
+            _CANN_CUSTOM_SEGMENT_ARITY[key] = arity
+            return checked.read_text()
+        if arity == 3 and known is None and "size mismatch in attribute conversion: 3 vs 2" in result.stderr:
+            continue
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+    raise RuntimeError("Could not determine the CANN custom-op schema")
 
 
 def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
@@ -330,7 +367,7 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
         # Detect the transport in the artifact itself, including when the
         # preceding stage was loaded from a partial compiler cache.
         if '"cann_compat.custom"(' in linalg_text:
-            linalg_text = _restore_cann_custom_ops(linalg_text)
+            linalg_text = _decode_cann_custom_ops(linalg_text, bishengir_opt_path, env, tmpdir)
 
         if opt.debug:
             dump_manager = get_dump_manager(metadata["hash"])

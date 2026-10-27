@@ -176,16 +176,22 @@ def _merge_xpu_packages(existing_packages):
             packages.append(package)
             seen.add(package)
 
+    def include(package):
+        return not _is_xpu_tle_package(package) or bool(_xpu_package_source_dirs(package))
+
     for package in find_packages(where=FLAGTREE_PYTHON_ROOT, include=["triton", "triton.*"]):
-        add(package)
+        if include(package):
+            add(package)
 
     for package in existing_packages:
-        add(package)
+        if include(package):
+            add(package)
 
     # Keep XPU-only packages and package-level overlay entry points in the
     # distribution. Shared packages are assembled by XpuBuildPy below.
     for package in find_packages(where=XPU_PYTHON_ROOT, include=["triton", "triton.*"]):
-        add(package)
+        if include(package):
+            add(package)
 
     return packages
 
@@ -203,6 +209,8 @@ def _merge_xpu_package_dir(existing_package_dir):
         sources = _xpu_package_source_dirs(package)
         if sources:
             package_dir[package] = str(sources[0])
+        elif _is_xpu_tle_package(package):
+            package_dir.pop(package, None)
 
     return package_dir
 

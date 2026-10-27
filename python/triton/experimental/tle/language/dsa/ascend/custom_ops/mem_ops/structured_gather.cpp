@@ -10,8 +10,7 @@ __aiv__ __attribute__((always_inline)) void structured_gather(
     memref_t<__ubuf__ T, 1> *src,
     memref_t<__ubuf__ int32_t, 1> *indices,
     memref_t<__ubuf__ T, 1> *dst,
-    memref_t<__ubuf__ int32_t, 1> *addresses,
-    memref_t<__ubuf__ T, 1> *scratch) {
+    memref_t<__ubuf__ int32_t, 1> *addresses) {
   using Bits = typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
   const int64_t n = indices->sizes[0];
   auto src_ptr = reinterpret_cast<__ubuf__ Bits *>(src->aligned + src->offset);
@@ -22,7 +21,7 @@ __aiv__ __attribute__((always_inline)) void structured_gather(
   // vector ISA has no general scatter exposed by the CANN SDK. The common
   // packed case below has no data-length scalar loop, even for strided src.
   if (indices->strides[0] != 1 || addresses->strides[0] != 1 ||
-      scratch->strides[0] != 1 || dst->strides[0] != 1) {
+      dst->strides[0] != 1) {
     INTRINSIC(set_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
     INTRINSIC(wait_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
     for (int64_t i = 0; i < n; ++i)
@@ -55,9 +54,8 @@ __aiv__ __attribute__((always_inline)) void structured_gather(
           memref_t<__ubuf__ TYPE, 1> *src,                                      \
           memref_t<__ubuf__ int32_t, 1> *indices,                               \
           memref_t<__ubuf__ TYPE, 1> *dst,                                      \
-          memref_t<__ubuf__ int32_t, 1> *addresses,                             \
-          memref_t<__ubuf__ TYPE, 1> *scratch) {                                \
-    structured_gather(src, indices, dst, addresses, scratch);                    \
+          memref_t<__ubuf__ int32_t, 1> *addresses) {                           \
+    structured_gather(src, indices, dst, addresses);                             \
   }
 
 REGISTER_STRUCTURED_GATHER(half, half)

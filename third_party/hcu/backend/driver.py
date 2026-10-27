@@ -876,7 +876,8 @@ class HIPLauncher(object):
         profile_scratch = allocate_scratch(self.profile_scratch_size, self.profile_scratch_align,
                                            _allocation._profile_allocator)
 
-        self.launch(self.launch_cooperative_grid, gridX, gridY, gridZ, stream, function, global_scratch, profile_scratch, *args)
+        self.launch(self.launch_cooperative_grid, gridX, gridY, gridZ, stream, function, global_scratch,
+                    profile_scratch, *args)
 
 
 class HIPDriver(GPUDriver):

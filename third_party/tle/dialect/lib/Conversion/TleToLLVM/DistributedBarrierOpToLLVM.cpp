@@ -157,7 +157,8 @@ struct DistributedBarrierOpConversion
   DistributedBarrierOpConversion(LLVMTypeConverter &typeConverter,
                                  PatternBenefit benefit,
                                  const TargetInfoBase *targetInfo)
-      : ConvertOpToLLVMPattern(typeConverter, benefit), targetInfo(targetInfo) {}
+      : ConvertOpToLLVMPattern(typeConverter, benefit), targetInfo(targetInfo) {
+  }
 
   const TargetInfoBase *targetInfo;
 
@@ -593,5 +594,5 @@ void tle::populateDistributedBarrierOpToLLVMPatterns(
     LLVMTypeConverter &typeConverter, RewritePatternSet &patterns,
     PatternBenefit benefit, const TargetInfoBase *targetInfo) {
   patterns.add<DistributedBarrierOpConversion>(typeConverter, benefit,
-                                              targetInfo);
+                                               targetInfo);
 }

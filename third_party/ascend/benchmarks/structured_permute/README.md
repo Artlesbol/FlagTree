@@ -62,12 +62,13 @@ done
 ```
 
 For a separate 40-block comparison, enable the existing compiler auto-blockify
-option and compile a fresh kernel; use the persistent native reference alongside
-it. Do not change this option while replaying an archived binary compiled with a
-different dispatch contract.
+option and use the persistent native reference alongside it. Effective dispatch
+is included in both JIT specialization and disk-cache keys. Explicit
+`enable_auto_blockify=True/False` overrides the environment. An archived binary
+must still be replayed with its own dispatch contract.
 
 ```bash
-TRITON_ALL_BLOCKS_PARALLEL=1 TRITON_ALWAYS_COMPILE=1 python "$bench/bench.py" \
+TRITON_ALL_BLOCKS_PARALLEL=1 python "$bench/bench.py" \
   --impl triton --case nested --q 256 --output "$out/triton40-nested-q256.json"
 python "$bench/bench.py" --impl aiv --case nested --q 256 --aiv-blocks 40 \
   --library "$out/aiv-build/libpermute_reference.so" \
@@ -92,6 +93,7 @@ pytest -q third_party/ascend/unittest/pytest_ut/test_split.py \
   third_party/ascend/unittest/pytest_ut/test_ir_builder.py -x
 pytest -q third_party/ascend/unittest/pytest_ut/test_custom_bytecode_compat.py -x
 pytest -q third_party/ascend/unittest/pytest_ut/test_split_join_values.py -x
+pytest -q third_party/ascend/unittest/pytest_ut/test_structured_permutation_p0.py -x
 ```
 
 The layout suite covers rank/shape changes, multiple consumers, independent and
@@ -108,8 +110,9 @@ primitive; large transposes retain native tiling. These are static permutations,
 not dynamic `tl.gather` operations.
 
 Before dialect conversion, the pass proves single-use dense unmasked loads and
-contiguous terminal stores. A simple rank-two split or rank-one word join meeting
-that proof retains CANN's native load/store-folding path. Transposed, computed,
+contiguous terminal stores. A simple rank-two split meeting that proof retains CANN's native load/store-folding
+path. A qualifying rank-one word join does so for one row per block; persistent
+auto-blockify uses the compact interleave path instead. Transposed, computed,
 masked and shared inputs do not qualify. This is a graph property, not a
 benchmark-name or size-specific admission rule.
 
@@ -125,11 +128,12 @@ buffers and synchronization, a private-operation-only ABI adapter emits device
 function calls for the installed hivmc. It preserves existing allocations,
 strides and synchronization; no installed CANN template or binary is patched.
 
-The vector fast path covers supported 16/32-bit values with a packed destination,
-including a strided source. Narrow byte values use private byte/word storage conversion around permutations,
+The vector fast path requires packed, 32-byte-aligned destinations, indices and
+scratch, and supports strided or element-offset sources through vector gather.
+Packed split uses vector reduction only when its source is also aligned. Narrow byte values use private byte/word storage conversion around permutations,
 which prevents CANN from moving a flat cast back into its broken sub-block 2D
-cast path. Nonunit destination/index/scratch strides currently
-have a synchronized scalar correctness path. Do not claim vector performance
+cast path. Nonunit destination/index/scratch strides and unaligned destinations, indices
+or scratch have a synchronized scalar correctness path. Do not claim vector performance
 for those layouts. Tiny two-scalar joins use two exact element insertions.
 
 Static permutation indices are bounded to 4096 entries (16 KiB). Joins with
@@ -144,3 +148,58 @@ Set `FLAGTREE_PERMUTE_DUMP_DIR` to retain the private operations immediately bef
 and after late ABI lowering. These artifacts expose actual UB descriptors and
 synchronization, so the packed vector-path claim can be checked against the
 physical strides rather than inferred from source tensor shapes.
+
+
+## P0 coverage and acceptance
+
+Run the entire regression list twice, in separate processes, with
+`TRITON_ALL_BLOCKS_PARALLEL=0` and `=1`. Tests include batch boundaries
+1/39/40/41/2047/2049, either split result alone, masked byte tails, native-path
+admission/rejection, index/resource thresholds and 32 seeded rank-2 through rank-5
+graphs. All outputs, side outputs and guard elements are checked. The large
+computed FP32 join explicitly accepts only exact results or a compile-time UB
+resource diagnostic; it does not accept runtime failure. This resource test does
+not claim that every oversized combination can run on 192 KiB UB.
+
+HBM views do not establish physical UB strides. The optional ABI harness links
+the **same device bitcode shipped by FlagTree**, constructs actual UB memref
+descriptors, poisons complete output buffers and repeats calls with reused
+scratch. Its 348 cases cover 16/32-bit raw words, byte storage conversions,
+strides, offsets and vector/tail boundaries. Reconfigure/rebuild it whenever the
+bitcode changes; CMake embeds dependency digests in its generated primary source.
+
+```bash
+bc="$PWD/python/triton/experimental/tle/language/dsa/ascend/custom_ops/custom_ops.bc"
+cmake -S "$bench" -B "$out/ub-build" -DCMAKE_BUILD_TYPE=Release \
+  -DASCEND_CANN_PACKAGE_PATH=/usr/local/Ascend/cann-9.0.0 \
+  -DSOC_VERSION=Ascend910B4 -DFLAGTREE_DEVICE_BITCODE="$bc"
+cmake --build "$out/ub-build" --target ub_contract_reference -j8
+FLAGTREE_UB_CONTRACT_LIBRARY="$out/ub-build/libub_contract_reference.so" \
+  pytest -q "$bench/test_ub_contract.py" -x
+```
+
+Cross-process cache checks require a new result directory. Specify compatible
+LLVM tools explicitly if they are not on `PATH`; the CANN toolkit may ship
+`llvm-link` without `llvm-as`. The suite checks 12 cold/hot, dispatch-override,
+missing-final-binary, device-bitcode-change and binary-only contracts. Each child
+checks outputs and exits cleanly; it also records compiler subprocesses.
+
+```bash
+python "$bench/cache_contract.py" --root "$out/cache-contract" \
+  --llvm-as /path/to/compatible/llvm-as \
+  --llvm-link /usr/local/Ascend/cann-9.0.0/tools/bisheng_compiler/bin/llvm-link
+```
+
+For controlled join A/B, use `--join-lowering auto`, `native`, or `packed` with
+the same dtype, Q, batch, dispatch and timing protocol. These compiler options
+are hashed and cannot bypass safety/resource admission. Report dispatch modes
+separately. Build a wheel normally and install it into an empty isolated target;
+run tests from outside the checkout and verify Python modules, `libtriton` and
+`custom_ops.bc` all resolve under that target. Do not validate a wheel by copying
+files into its installation from a previous build.
+
+The FLIR tests `structured_permutation.mlir` and
+`structured_permutation_admission.mlir` cover rewrite legality and fallback.
+`structured_permutation_encoded.mlir` is a **negative** test: this Ascend pipeline
+consumes unencoded TTIR and must not silently accept TTG distributed encodings.
+Other architectures are checked for IR fallback only, not device execution.

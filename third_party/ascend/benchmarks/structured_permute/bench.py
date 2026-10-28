@@ -61,6 +61,8 @@ def main():
     p.add_argument("--impl", choices=["triton", "aiv"], required=True)
     p.add_argument("--case", choices=["split", "join", "nested"], required=True)
     p.add_argument("--join-lowering", choices=["auto", "native", "packed"], default="auto")
+    p.add_argument("--address-hoisting", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--store-sync-optimization", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--q", type=int, default=256)
     p.add_argument("--batch", type=int, default=2048)
     p.add_argument("--dtype", choices=["float32", "float16", "bfloat16", "int16", "int32"], default="float32")
@@ -116,11 +118,15 @@ def main():
                 raise RuntimeError(f"AIV launch failed: {rc}")
     elif args.case == "nested":
         def launch():
-            return nested_kernel[(batch,)](x, z, y, t, j, Q=q, structured_join_lowering=args.join_lowering)
+            return nested_kernel[(batch,)](x, z, y, t, j, Q=q, structured_join_lowering=args.join_lowering,
+                                                structured_address_hoisting=args.address_hoisting,
+                                                structured_store_sync_optimization=args.store_sync_optimization)
     else:
         kernel = split_kernel if args.case == "split" else join_kernel
         def launch():
-            return kernel[(batch,)](x, z, y, Q=q, structured_join_lowering=args.join_lowering)
+            return kernel[(batch,)](x, z, y, Q=q, structured_join_lowering=args.join_lowering,
+                                                structured_address_hoisting=args.address_hoisting,
+                                                structured_store_sync_optimization=args.store_sync_optimization)
     compiled = launch()
     if args.impl == "triton":
         # Match archived-binary controls exactly. Compile through JIT once,

@@ -347,6 +347,23 @@ static std::optional<PlannedStore> getPlannedStore(mlir::Operation *op) {
   auto gm = hivm::AddressSpaceAttr::get(op->getContext(), hivm::AddressSpace::GM);
   if (!source || source.getMemorySpace() != ub)
     return std::nullopt;
+  Value src = call.getOperand(0);
+  while (auto cast = src.getDefiningOp<memref::CastOp>())
+    src = cast.getSource();
+  auto packedSource = cast<MemRefType>(src.getType());
+  SmallVector<int64_t> sourceStrides;
+  int64_t sourceOffset;
+  auto buffers = resolvePermuteSource(src, true);
+  int64_t bytes = source.getElementTypeBitWidth() / 8;
+  // Admit only the library's direct DMA path: no scalar tail, unaligned UB
+  // handling, strided packing, or hidden temporary storage inside the call.
+  if (!packedSource.hasStaticShape() || packedSource.getRank() != 1 ||
+      failed(getPermuteStrides(packedSource, sourceStrides, sourceOffset)) ||
+      sourceStrides[0] != 1 || ShapedType::isDynamic(sourceOffset) ||
+      !bytes || sourceOffset < 0 || (sourceOffset % 32) * bytes % 32 ||
+      (packedSource.getNumElements() * bytes) % 32 || !buffers ||
+      buffers->first.address % 32 || buffers->second.address % 32)
+    return std::nullopt;
   Value dest = call.getOperand(1);
   while (auto cast = dest.getDefiningOp<memref::CastOp>())
     dest = cast.getSource();
@@ -357,6 +374,7 @@ static std::optional<PlannedStore> getPlannedStore(mlir::Operation *op) {
   if (!type || type.getMemorySpace() != gm || type.getRank() != 1 ||
       type.getElementType() != source.getElementType() ||
       !type.hasStaticShape() || type.getNumElements() <= 0 ||
+      type.getNumElements() != packedSource.getNumElements() ||
       failed(getPermuteStrides(type, strides, ignored)) || strides[0] != 1 ||
       !view || view.getMixedOffsets().size() != 1)
     return std::nullopt;
@@ -422,7 +440,7 @@ struct CoalesceStructuredStoreSyncPass
           // A read/write, another pipeline synchronization, control flow, or an
           // unknown operation ends the group. Keep the final wait and every
           // cross-pipeline dependency exactly as CANN scheduled them.
-          if (!isMemoryEffectFree(&op) && !isa<hivm::PointerCastOp>(op)) {
+          if (!isMemoryEffectFree(&op) && !isa<hivm::PointerCastOp>(&op)) {
             group.clear();
             pending.clear();
           }

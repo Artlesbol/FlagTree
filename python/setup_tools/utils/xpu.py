@@ -48,6 +48,8 @@ FLAGTREE_PYTHON_ROOT = "python"
 # flattened installers, into `triton/backends/` and `TritonSDNN/IR/`), where
 # nothing tracked them and a `git add -A` would sweep them into a commit.
 _PKG_METADATA_FILES = frozenset({"LICENSE", "PROVENANCE", "PROVENANCE.json"})
+
+
 def _use_xtdk_frontend():
     """True when the legacy XTDK LLVM 22 frontend is requested.
 
@@ -649,8 +651,7 @@ def _compiled_python_packages():
     suffixes = tuple(s for s in importlib.machinery.EXTENSION_SUFFIXES if s != ".so")
     # Both roots are walked down to the package root itself, so `relative_to`
     # yields a package-relative path that the prefix can be joined onto.
-    roots = ((Path(FLAGTREE_PYTHON_ROOT) / "triton", "triton"),
-             (Path(BACKEND_ROOT), "triton.backends.xpu"))
+    roots = ((Path(FLAGTREE_PYTHON_ROOT) / "triton", "triton"), (Path(BACKEND_ROOT), "triton.backends.xpu"))
     for root, prefix in roots:
         if not root.is_dir():
             continue

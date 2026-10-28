@@ -147,3 +147,28 @@ def test_kernel_cache_completeness(tmp_path, missing):
         binary.unlink()
         binary.mkdir()
     assert _is_complete_kernel_cache(group, 'kernel.json', 'kernel.npubin') == (missing == 'none')
+
+
+@pytest.mark.parametrize('suffix,element', [('half', 'f16'), ('bf16', 'bf16'), ('float', 'f32'), ('int16', 'i16'),
+                                            ('int32', 'i32')])
+def test_short_row_store_abi(suffix, element):
+    ub, gm = '#hivm.address_space<ub>', '#hivm.address_space<gm>'
+    types = [
+        f'memref<1024x?x{element}, strided<[4, 1], offset: 3>, {ub}>',
+        f'memref<1024x?x{element}, strided<[1024, 1], offset: ?>, {gm}>', f'memref<1024xi32, {ub}>',
+        f'memref<1024xi32, {ub}>'
+    ]
+    text = ('"builtin.module"() ({\n'
+            '    "hivm.hir.custom"(%a, %b, %addr, %work) '
+            f'{{symbol = "custom_flagtree_short_row_store_{suffix}"}} : ({", ".join(types)}) -> ()\n'
+            '}) : () -> ()\n')
+    result = late.lower_private_ops(text)
+    assert result.count('memref.cast') == 4
+    assert f'memref<?x?x{element}, strided<[?, ?], offset: ?>, {gm}>' in result
+    assert f'func.call @custom_flagtree_short_row_store_{suffix}' in result
+    with pytest.raises(ValueError, match='rank-2 GM'):
+        late.lower_private_ops(text.replace(types[1], types[1].replace(gm, ub)))
+    with pytest.raises(ValueError, match='rank-2 UB'):
+        late.lower_private_ops(text.replace(types[0], types[0].replace('1024x?x', '4096x')))
+    with pytest.raises(ValueError, match='disagree'):
+        late.lower_private_ops(text.replace(types[2], types[2].replace('xi32', 'xf32')))

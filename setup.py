@@ -951,7 +951,6 @@ def get_git_version_suffix():
 # time as well as in add_links(), so package discovery sees the XPU spec tree.
 add_link_to_backend_spec()
 
-
 # Dynamically define supported Python versions and classifiers
 MIN_PYTHON = (3, 10)
 MAX_PYTHON = (3, 14)

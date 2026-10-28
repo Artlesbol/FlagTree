@@ -672,7 +672,10 @@ class GeneratedTirCallGraphModule(RuntimeModule):
                 spec["dynamic_argument_indices"],
                 grid=spec["grid"],
                 contract=contract,
-                **compilation_options(contract, self.manifest.get("target", "")),
+                **compilation_options(
+                    contract, self.manifest.get("target", ""),
+                    floating_point_contract=self.ir_module.metadata.get("floating_point_contract"),
+                ),
             )
             for kernel, spec in zip(self.kernels, specs, strict=True)
         )
@@ -773,7 +776,8 @@ class GeneratedTirCallGraphModule(RuntimeModule):
             from triton.flagmega.runtime.source_rdata import load_source_rdata
             if int(index["segment_nbytes"]) != expected_nbytes:
                 raise ArtifactError("Source rdata segment size does not match the runtime readonly pool.")
-            return load_source_rdata(assets, index, self.ir_module, chip=chip, device=device)
+            pool = load_source_rdata(assets, index, self.ir_module, chip=chip, device=device)
+            return _triton_readonly_device_pool(pool, self.codegen, self.ir_module)
         segment_nbytes = int(index.get("segment_nbytes", index["nbytes"]))
         if segment_nbytes != expected_nbytes:
             raise ArtifactError(
@@ -785,7 +789,8 @@ class GeneratedTirCallGraphModule(RuntimeModule):
             size=int(index["nbytes"]),
             dtype=torch.uint8,
         )
-        return host.narrow(0, chip * segment_nbytes, segment_nbytes).to(device=device)
+        pool = host.narrow(0, chip * segment_nbytes, segment_nbytes).to(device=device)
+        return _triton_readonly_device_pool(pool, self.codegen, self.ir_module)
 
     def _release_resources(self) -> None:
         # ``_device_window`` is assigned before world-size validation and
@@ -1686,6 +1691,15 @@ def _torch():
     except ImportError as error:
         raise RuntimeContractError("FlagMega generated runtime requires PyTorch tensor/storage APIs.") from error
     return torch
+
+
+def _triton_readonly_device_pool(pool, codegen, module):
+    """Transform a freshly verified pool once, before preparation or capture."""
+    contract = codegen.get("triton_readonly_device_layout")
+    if contract is None:
+        return pool
+    from triton.flagmega.codegen.readonly_layout import apply_readonly_layout
+    return apply_readonly_layout(pool, contract, module)
 
 
 def _runtime_chip_index(chip_count: int) -> int:

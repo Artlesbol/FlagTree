@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from triton.flagmega.diagnostics import Dumper
 
 
-RENDERER_VERSION = "flagmega-triton-renderer/v20"
+RENDERER_VERSION = "flagmega-triton-renderer/v22"
 
 
 renderer_registry = PackageRendererRegistry()
@@ -41,7 +41,7 @@ renderer_registry.register(PackageRendererSpec(
         module.stage == "bufferized_tir"
         and module.dialect == "bufferized_tir"
     ),
-    describe_tir_package,
+    lambda module: describe_tir_package(module, specialize_readonly_layout=True),
     render_tir_package,
 ))
 

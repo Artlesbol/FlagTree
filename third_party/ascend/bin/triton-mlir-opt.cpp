@@ -78,7 +78,7 @@ struct ExportCANNCustomOpsPass
 
 int main(int argc, char **argv) {
   mlir::PassRegistration<ExportCANNCustomOpsPass>();
-  mlir::PassRegistration<HoistStructuredPermutationAddressesPass>();
+  mlir::triton::ascend::registerStructuredPermutationPasses();
   // Register all MLIR dialects and passes
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);

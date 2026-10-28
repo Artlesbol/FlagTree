@@ -46,7 +46,9 @@ class HCUFlagCXTests(unittest.TestCase):
         # the dependency directly so these host tests never download/build it.
         with patch.dict(sys.modules, {"python.setup_tools.utils.default": self.common}):
             self.build = load_module("hcu_flagcx_build_test", "python/setup_tools/utils/hcu.py")
-        self.runtime = load_module("hcu_flagcx_runtime_test", "third_party/hcu/backend/distributed.py")
+        config = load_module("flagcx_config_test", "python/triton/experimental/_flagcx_config.py")
+        with patch.dict(sys.modules, {"triton.experimental._flagcx_config": config}):
+            self.runtime = load_module("hcu_flagcx_runtime_test", "third_party/hcu/backend/distributed.py")
 
     def external(self, source, backend="hcu"):
         cache = self.root / "cache"

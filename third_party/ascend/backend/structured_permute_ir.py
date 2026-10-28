@@ -60,6 +60,23 @@ def _check_store_workspace(typ, block_elements):
         raise ValueError('Short-row store requires aligned, packed, bounded i32 workspaces')
 
 
+def _check_load_layout(src, dst, block):
+    layouts = []
+    for typ in (src, dst):
+        fields = split_fields(typ[7:-1])
+        shape = re.fullmatch(r'(\d+)x(\d+)x\w+', fields[0])
+        layout = re.fullmatch(r'strided<\[(\d+), 1\](?:, offset: (\?|\d+))?>', fields[1]) if len(fields) == 3 else None
+        if not shape or (len(fields) == 3 and not layout):
+            raise ValueError('Short-row load requires static shapes and a contiguous inner stride')
+        layouts.append(
+            (int(shape[1]), int(shape[2]), int(layout[1]) if layout else int(shape[2]), layout[2] if layout else '0'))
+    rows, cols, ss, _ = layouts[0]
+    dr, dc, ds, offset = layouts[1]
+    if (rows != dr or cols != dc or rows <= 1 or not 0 < cols < block or ss < cols or offset == '?'
+            or int(offset or 0) % block or not (ds == cols or (ds >= block and ds % block == 0))):
+        raise ValueError('Unsupported physical short-row load layout')
+
+
 def lower_private_ops(text):
     """Expand strictly recognized private operations; reject malformed ABI input."""
     prefix = 'flagtree_abi_'
@@ -75,37 +92,40 @@ def lower_private_ops(text):
             raise ValueError('Expected a result-free, bufferized private custom operation')
         indent, operands, attrs, types = match.groups()
         symbol = re.search(
-            r'\bsymbol = "(custom_flagtree_(?:(?:stride_gather|split|short_row_store)_'
+            r'\bsymbol = "(custom_flagtree_(?:(?:stride_gather|split|short_row_store|short_row_load)_'
             r'(?:half|bf16|float|int16|int32)|byte_to_word|word_to_byte))"', attrs)
         if not symbol:
             raise ValueError('Unknown FlagTree structured permutation ABI')
         name = symbol[1]
         operands, types = split_fields(operands), split_fields(types)
         cast = name.endswith(('byte_to_word', 'word_to_byte'))
-        arity = 3 if cast else 4
+        load = 'short_row_load_' in name
+        arity = 3 if cast or load else 4
         if len(operands) != arity or len(types) != arity or any(not re.fullmatch(r'%[\w.$-]+(?:#\d+)?', v)
                                                                 for v in operands):
             raise ValueError('Invalid structured permutation operands')
         store = 'short_row_store_' in name
-        if store:
+        if store or load:
             canonical = [
-                _canonical_memref(types[0], 2),
-                _canonical_memref(types[1], 2, 'gm'), *[_canonical_memref(t) for t in types[2:]]
+                _canonical_memref(types[0], 2, 'gm' if load else 'ub'),
+                _canonical_memref(types[1], 2, 'ub' if load else 'gm'), *[_canonical_memref(t) for t in types[2:]]
             ]
             elem = dict(half='f16', bf16='bf16', float='f32', int16='i16', int32='i32')[name.rsplit('_', 1)[1]]
-            expected = [elem, elem, 'i32', 'i32']
+            expected = [elem, elem, 'i32'] if load else [elem, elem, 'i32', 'i32']
             for typ in types[2:]:
-                _check_store_workspace(typ, 8 if elem in ('f32', 'i32') else 16)
-            if types[2] != types[3]:
+                _check_store_workspace(typ, 8 if load or elem in ('f32', 'i32') else 16)
+            if load:
+                _check_load_layout(types[0], types[1], 8 if elem in ('f32', 'i32') else 16)
+            elif types[2] != types[3]:
                 raise ValueError('Short-row store workspace capacities and layouts must agree')
         else:
             canonical = [_canonical_memref(t) for t in types]
         if cast:
             expected = ['i8', 'i16', 'f16'] if name.endswith('byte_to_word') else ['i16', 'i8', 'f16']
-        elif not store:
+        elif not store and not load:
             elem = dict(half='f16', bf16='bf16', float='f32', int16='i16', int32='i32')[name.rsplit('_', 1)[1]]
             expected = [elem, 'i32', elem, 'i32'] if 'stride_gather' in name else [elem] * 3 + ['i32']
-        if any(not t.startswith('memref<' + ('?x?x' if store and i < 2 else '?x') + e + ',')
+        if any(not t.startswith('memref<' + ('?x?x' if (store or load) and i < 2 else '?x') + e + ',')
                for i, (t, e) in enumerate(zip(canonical, expected))):
             raise ValueError('Private operation symbol and operand types disagree')
         if name in declarations and declarations[name] != canonical:

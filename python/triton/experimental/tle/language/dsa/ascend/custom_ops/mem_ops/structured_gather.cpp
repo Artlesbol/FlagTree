@@ -255,6 +255,70 @@ REGISTER_SHORT_ROW_STORE(float, float)
 REGISTER_SHORT_ROW_STORE(int16, int16_t)
 REGISTER_SHORT_ROW_STORE(int32, int32_t)
 
+// The symmetric load preserves DMA even when the consumer needs packed rows.
+// Its single, preplanned workspace is at most 4 KiB; no scalar GM access is
+// introduced by CANN's choice of the output buffer's physical row stride.
+template <typename T>
+__aiv__ __attribute__((always_inline)) void
+short_row_load(memref_t<__gm__ T, 2> *src, memref_t<__ubuf__ T, 2> *dst,
+               memref_t<__ubuf__ int32_t, 1> *scratch) {
+  constexpr int blockElements = 32 / sizeof(T);
+  int64_t rows = src->sizes[0], cols = src->sizes[1];
+  if (rows == 0 || cols == 0)
+    return;
+  auto in = src->aligned + src->offset;
+  auto out = dst->aligned + dst->offset;
+  int64_t srcStride = src->strides[0], dstStride = dst->strides[0];
+  INTRINSIC(set_mov_pad_val, 0);
+  if (dstStride >= blockElements && dstStride % blockElements == 0) {
+    INTRINSIC(set_flag, PIPE_V, PIPE_MTE2, LIB_EVENT_ID0);
+    INTRINSIC(wait_flag, PIPE_V, PIPE_MTE2, LIB_EVENT_ID0);
+    for (int64_t row = 0; row < rows; row += INTRIN_MAX_BURST_CNT) {
+      int64_t n = min(rows - row, int64_t(INTRIN_MAX_BURST_CNT));
+      load_gm_to_ubuf_intrin_core(
+          in, row * srcStride, out, row * dstStride, n, cols * sizeof(T), 0,
+          (srcStride - cols) * sizeof(T), dstStride / blockElements - 1);
+    }
+    INTRINSIC(set_flag, PIPE_MTE2, PIPE_V, LIB_EVENT_ID0);
+    INTRINSIC(wait_flag, PIPE_MTE2, PIPE_V, LIB_EVENT_ID0);
+    return;
+  }
+  auto work =
+      reinterpret_cast<__ubuf__ T *>(scratch->aligned + scratch->offset);
+  int64_t chunkRows = min(rows, scratch->sizes[0] / 8);
+  for (int64_t row = 0; row < rows; row += chunkRows) {
+    int64_t n = min(rows - row, chunkRows);
+    INTRINSIC(set_flag, PIPE_V, PIPE_MTE2, LIB_EVENT_ID0);
+    INTRINSIC(wait_flag, PIPE_V, PIPE_MTE2, LIB_EVENT_ID0);
+    load_gm_to_ubuf_intrin_core(in, row * srcStride, work, 0, n,
+                                cols * sizeof(T), 0,
+                                (srcStride - cols) * sizeof(T), 0);
+    INTRINSIC(set_flag, PIPE_MTE2, PIPE_V, LIB_EVENT_ID0);
+    INTRINSIC(wait_flag, PIPE_MTE2, PIPE_V, LIB_EVENT_ID0);
+    memref_t<__ubuf__ T, 2> packedSource{
+        work, work, 0, {n, cols}, {blockElements, 1}};
+    auto packedDest = *dst;
+    packedDest.offset += row * dstStride;
+    packedDest.sizes[0] = n;
+    vreducev2_2d_with_pattern_mode<T, PatternMode::ALL_ELEMENTS>(&packedSource,
+                                                                 &packedDest);
+  }
+}
+
+#define REGISTER_SHORT_ROW_LOAD(SUFFIX, TYPE)                                  \
+  extern "C" __aiv__ __attribute__((always_inline)) void                       \
+      _mlir_ciface_custom_flagtree_short_row_load_##SUFFIX(                    \
+          memref_t<__gm__ TYPE, 2> *src, memref_t<__ubuf__ TYPE, 2> *dst,      \
+          memref_t<__ubuf__ int32_t, 1> *scratch) {                            \
+    short_row_load(src, dst, scratch);                                         \
+  }
+
+REGISTER_SHORT_ROW_LOAD(half, half)
+REGISTER_SHORT_ROW_LOAD(bf16, bfloat16_t)
+REGISTER_SHORT_ROW_LOAD(float, float)
+REGISTER_SHORT_ROW_LOAD(int16, int16_t)
+REGISTER_SHORT_ROW_LOAD(int32, int32_t)
+
 // These conversions serve byte permutations only: word values are always in
 // [-128,127]. Half represents that range exactly, so no saturation/overflow
 // conversion or CANN's sub-block 2D cast is required.

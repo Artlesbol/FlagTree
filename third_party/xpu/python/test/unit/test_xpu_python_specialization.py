@@ -13,11 +13,10 @@ def test_shared_tool_module_is_not_loaded_from_xpu_spec():
 
 
 def test_tensor_descriptor_uses_xpu_spec_and_accepts_unaligned_layout():
-    assert Path(tensor_descriptor.__file__).parts[-7:] == (
+    assert Path(tensor_descriptor.__file__).parts[-6:] == (
         "triton",
-        "backends",
-        "xpu",
         "spec",
+        "xpu",
         "triton",
         "tools",
         "tensor_descriptor.py",

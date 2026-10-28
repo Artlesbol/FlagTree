@@ -156,9 +156,9 @@ inline bool getBoolEnvXPU(const std::string &env) {
 `.gitignore` 新增：
 
 ```
-third_party/xpu/python/triton/_C/*.so
-third_party/xpu/python/triton/FileCheck
-third_party/xpu/python/triton/instrumentation/*.so
+python/triton/_C/*.so
+python/triton/FileCheck
+python/triton/instrumentation/*.so
 third_party/xpu/python/*.egg-info
 ```
 

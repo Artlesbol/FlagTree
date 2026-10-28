@@ -178,3 +178,33 @@ def test_short_row_store_abi(suffix, element):
     ]:
         with pytest.raises(ValueError, match='workspaces'):
             late.lower_private_ops(text.replace(types[2], invalid))
+
+
+@pytest.mark.parametrize('suffix,element,block', [('half', 'f16', 16), ('bf16', 'bf16', 16), ('float', 'f32', 8),
+                                                  ('int16', 'i16', 16), ('int32', 'i32', 8)])
+@pytest.mark.parametrize('padded', [False, True])
+def test_short_row_load_abi(suffix, element, block, padded):
+    ub, gm = '#hivm.address_space<ub>', '#hivm.address_space<gm>'
+    pitch = block if padded else 4
+    types = [
+        f'memref<32x4x{element}, strided<[37, 1], offset: ?>, {gm}>',
+        f'memref<32x4x{element}, strided<[{pitch}, 1]>, {ub}>', f'memref<256xi32, {ub}>'
+    ]
+    text = ('"builtin.module"() ({\n'
+            '    "hivm.hir.custom"(%x, %y, %work) '
+            f'{{symbol = "custom_flagtree_short_row_load_{suffix}"}} : ({", ".join(types)}) -> ()\n'
+            '}) : () -> ()\n')
+    result = late.lower_private_ops(text)
+    assert result.count('memref.cast') == 3
+    assert f'call @custom_flagtree_short_row_load_{suffix}' in result
+    for bad in [
+            types[1].replace(f'[{pitch}, 1]', f'[{pitch}, 2]'), types[1].replace(f'[{pitch}, 1]',
+                                                                                 f'[{pitch}, 1], offset: 1'),
+            types[1].replace(f'[{pitch}, 1]', '[5, 1]'), types[1].replace('32x4x', '32x?x')
+    ]:
+        with pytest.raises(ValueError, match='layout|static shapes'):
+            late.lower_private_ops(text.replace(types[1], bad))
+    with pytest.raises(ValueError, match='rank-2 GM'):
+        late.lower_private_ops(text.replace(types[0], types[0].replace(gm, ub)))
+    with pytest.raises(ValueError, match='workspaces'):
+        late.lower_private_ops(text.replace(types[2], types[2].replace('256xi32', '0xi32')))

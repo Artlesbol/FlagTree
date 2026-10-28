@@ -143,9 +143,16 @@ template <typename T> struct ContractMatrix {
           ContractMemref<__ubuf__ int32_t> *);
 DECLARE_SHORT_STORE(int16, int16_t)
 DECLARE_SHORT_STORE(int32, int32_t)
+#define DECLARE_SHORT_LOAD(SUFFIX, T)                                          \
+  extern "C" __aicore__ void                                                   \
+      _mlir_ciface_custom_flagtree_short_row_load_##SUFFIX(                    \
+          ContractMatrix<__gm__ T> *, ContractMatrix<__ubuf__ T> *,            \
+          ContractMemref<__ubuf__ int32_t> *);
+DECLARE_SHORT_LOAD(int16, int16_t)
+DECLARE_SHORT_LOAD(int32, int32_t)
 
 constexpr uint32_t STORE_INPUT = 16384, STORE_WORK = 1056;
-template <typename T>
+template <typename T, bool LOAD = false>
 __aicore__ inline void short_row_contract(GM_ADDR x, GM_ADDR y, GM_ADDR debug,
                                           GlobalTensor<uint32_t> config) {
   TPipe pipe;
@@ -168,7 +175,10 @@ __aicore__ inline void short_row_contract(GM_ADDR x, GM_ADDR y, GM_ADDR debug,
   uint32_t workOffset = config.GetValue(10);
   for (uint32_t program = GetBlockIdx(); program < programs;
        program += GetBlockNum()) {
-    DataCopy(input, gx[program * STORE_INPUT], STORE_INPUT);
+    if constexpr (LOAD)
+      Duplicate(input, T(-91), STORE_INPUT);
+    else
+      DataCopy(input, gx[program * STORE_INPUT], STORE_INPUT);
     Duplicate(addresses, int32_t(-177), STORE_WORK);
     Duplicate(work, int32_t(-177), STORE_WORK);
     pipe_barrier(PIPE_ALL);
@@ -187,12 +197,31 @@ __aicore__ inline void short_row_contract(GM_ADDR x, GM_ADDR y, GM_ADDR debug,
                                   {dstStride, 1}};
     auto a = descriptor(addresses, 1024, 1, addressOffset);
     auto w = descriptor(work, 1024, 1, workOffset);
-    if constexpr (sizeof(T) == 2)
-      _mlir_ciface_custom_flagtree_short_row_store_int16(&source, &dest, &a,
-                                                         &w);
-    else
-      _mlir_ciface_custom_flagtree_short_row_store_int32(&source, &dest, &a,
-                                                         &w);
+    if constexpr (LOAD) {
+      auto gm = reinterpret_cast<__gm__ T *>(x);
+      ContractMatrix<__gm__ T> loadSource{gm,
+                                          gm,
+                                          int64_t(dstOffset + program * cols),
+                                          {rows, validCols},
+                                          {dstStride, 1}};
+      if constexpr (sizeof(T) == 2)
+        _mlir_ciface_custom_flagtree_short_row_load_int16(&loadSource, &source,
+                                                          &w);
+      else
+        _mlir_ciface_custom_flagtree_short_row_load_int32(&loadSource, &source,
+                                                          &w);
+      pipe_barrier(PIPE_ALL);
+      GlobalTensor<T> gy;
+      gy.SetGlobalBuffer(reinterpret_cast<__gm__ T *>(y));
+      DataCopy(gy[program * STORE_INPUT], input, STORE_INPUT);
+    } else {
+      if constexpr (sizeof(T) == 2)
+        _mlir_ciface_custom_flagtree_short_row_store_int16(&source, &dest, &a,
+                                                           &w);
+      else
+        _mlir_ciface_custom_flagtree_short_row_store_int32(&source, &dest, &a,
+                                                           &w);
+    }
     pipe_barrier(PIPE_ALL);
     DataCopy(gd[program * 2 * STORE_WORK], addresses, STORE_WORK);
     DataCopy(gd[program * 2 * STORE_WORK + STORE_WORK], work, STORE_WORK);
@@ -212,6 +241,11 @@ ub_contract_aiv(GM_ADDR x, GM_ADDR indices, GM_ADDR a, GM_ADDR b, GM_ADDR cfg,
       short_row_contract<int16_t>(x, a, b, config);
     else
       short_row_contract<int32_t>(x, a, b, config);
+  } else if (mode == 5) {
+    if (wordBytes == 2)
+      short_row_contract<int16_t, true>(x, a, b, config);
+    else
+      short_row_contract<int32_t, true>(x, a, b, config);
   } else if (mode == 2)
     cast_contract<true>(x, a, config);
   else if (mode == 3)

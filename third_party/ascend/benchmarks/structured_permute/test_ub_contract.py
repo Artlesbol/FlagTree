@@ -146,3 +146,59 @@ def test_short_row_store_physical_layouts(launch_store, dtype, programs, rows, c
                 assert torch.all(physical[program, which, :begin] == -177)
                 assert torch.all(physical[program, which, begin + n:] == -177)
     assert torch.equal(source.cpu(), cpu)
+
+
+@pytest.fixture(scope='module')
+def launch_load():
+    torch.npu.set_device(0)
+    library = ctypes.CDLL(str(Path(os.environ['FLAGTREE_UB_CONTRACT_LIBRARY']).resolve()))
+    call = library.launch_short_row_load_contract
+    call.argtypes = [ctypes.c_void_p] * 5 + [ctypes.c_uint32] * 2
+    call.restype = ctypes.c_uint32
+
+    def run(x, y, debug, config, programs):
+        rc = call(torch.npu.current_stream().npu_stream, x.data_ptr(), y.data_ptr(), debug.data_ptr(),
+                  config.data_ptr(), programs, x.element_size())
+        assert rc == 0, rc
+        torch.npu.synchronize()
+
+    return run
+
+
+@pytest.mark.parametrize('dtype', [torch.int16, torch.int32])
+@pytest.mark.parametrize('programs', [1, 41])
+@pytest.mark.parametrize('rows', [0, 2, 7, 63, 64, 65, 127, 128, 129, 511])
+@pytest.mark.parametrize('cols,pitch,padding,offset,tail', [
+    (4, 0, 0, 0, 0),
+    (4, 1, 3, 1, 1),
+    (7, 2, 7, 7, 1),
+    (1, 0, 7, 4, 1),
+])
+def test_short_row_load_physical_layouts(launch_load, dtype, programs, rows, cols, pitch, padding, offset, tail):
+    input_size, work_size, block = 16384, 1056, 32 // torch.empty((), dtype=dtype).element_size()
+    stride, start = programs * cols - tail + padding, 32 + offset
+    cpu = (torch.arange(start + max(rows, 1) * stride + 32, dtype=torch.int32) * 977 - 31001).to(dtype)
+    source = cpu.npu()
+    output = torch.full((programs * input_size, ), -91, dtype=dtype, device='npu')
+    debug = torch.full((programs * 2 * work_size, ), -999, dtype=torch.int32, device='npu')
+    dst_stride, dst_offset = (cols if pitch == 0 else pitch * block), block
+    config = torch.tensor([rows, cols, dst_stride, 1, dst_offset, stride, start, programs, tail, 8, 16],
+                          dtype=torch.int32).npu()
+    expected = torch.full((programs, input_size), -91, dtype=dtype)
+    for program in range(programs):
+        active = cols - (tail if program == programs - 1 else 0)
+        if rows and active:
+            ri, ci = torch.arange(rows)[:, None], torch.arange(active)[None, :]
+            if dst_stride >= block and dst_stride % block == 0:
+                # DMA owns the allocated row padding, which is explicitly zeroed.
+                expected[program, dst_offset + ri * dst_stride + torch.arange(block)] = 0
+            expected[program, dst_offset + ri * dst_stride + ci] = cpu[start + ri * stride + program * cols + ci]
+    for _ in range(3):
+        output.fill_(-91)
+        launch_load(source, output, debug, config, programs)
+        assert torch.equal(output.cpu().reshape_as(expected), expected)
+        physical = debug.cpu().reshape(programs, 2, work_size)
+        assert torch.all(physical[:, 0] == -177)  # the unused address workspace
+        assert torch.all(physical[:, 1, :16] == -177)
+        assert torch.all(physical[:, 1, 1040:] == -177)
+    assert torch.equal(source.cpu(), cpu)

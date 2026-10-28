@@ -310,8 +310,12 @@ Each policy verifies exact outputs/guards before capture, after replay into
 cleared outputs, and after every timing round. Run `bench_paired.py` as well to
 check the previous structured-permutation performance baseline.
 
-Short strided GM loads explicitly allocate aligned UB rows before creating the
-logical view. This prevents a later packed reshape from forcing scalar GM
-loads. Native CANN `vreducev2` compaction handles the resulting padded-to-packed
-UB copy; no additional compaction pass or SDK helper replacement is needed.
-Dense GM loads keep their existing coalescing path.
+Full unmasked short-row strided GM loads use a symmetric compiler-owned
+DMA/vector operation with at most 4 KiB of preplanned workspace. Aligned
+physical outputs load directly; packed outputs use aligned DMA into the
+workspace and `vreducev2` compaction. This is needed because an early padded
+alloc or storage-alignment marker can disappear during CANN bufferization.
+Default cache/eviction, nonvolatile, static unencoded tiles are admitted;
+masked, boundary-checked, dense-GM and nondefault-cache loads keep their
+existing lowering. The physical-codegen regression checks the final CANN IR,
+so a numerically correct scalar-load regression cannot silently pass.

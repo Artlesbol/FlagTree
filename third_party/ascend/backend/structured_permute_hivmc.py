@@ -39,8 +39,11 @@ def main():
             target = Path(dump) / str(os.getpid())
             target.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target / "before.mlir")
-        cmd = [env["FLAGTREE_CANN_OPT"], str(source), "--mlir-print-op-generic",
-               "--mlir-print-local-scope", "-o", str(generic)]
+        cmd = [
+            env["FLAGTREE_CANN_OPT"],
+            str(source), "--mlir-print-op-generic", "--mlir-print-local-scope", "-o",
+            str(generic)
+        ]
         subprocess.run(cmd, env=env, check=True)
         calls = lower_private_ops(generic.read_text())
         optimizations = []
@@ -48,8 +51,7 @@ def main():
             optimizations.append("--hoist-structured-permutation-addresses")
         if env.get("FLAGTREE_PERMUTE_STORE_SYNC") == "1":
             optimizations.append("--coalesce-structured-store-sync")
-        if (optimizations and '"scf.for"' in calls and
-                "func.call @custom_flagtree_stride_gather_" in calls):
+        if (optimizations and '"scf.for"' in calls and "func.call @custom_flagtree_stride_gather_" in calls):
             # DLTI target-system assembly changed between LLVM versions. Keep
             # this metadata opaque during optimization, then restore it exactly.
             prefix = "flagtree_opaque_dlti"
@@ -59,11 +61,11 @@ def main():
             opaque = Path(tmp) / "kernel.opaque.mlir"
             optimized = Path(tmp) / "kernel.optimized.mlir"
             opaque.write_text(transported)
-            subprocess.run([env["FLAGTREE_PERMUTE_OPT"], str(opaque),
-                            "--allow-unregistered-dialect",
-                            *optimizations,
-                            "--mlir-print-local-scope", "-o", str(optimized)],
-                           env=env, check=True)
+            subprocess.run([
+                env["FLAGTREE_PERMUTE_OPT"],
+                str(opaque), "--allow-unregistered-dialect", *optimizations, "--mlir-print-local-scope", "-o",
+                str(optimized)
+            ], env=env, check=True)
             calls = optimized.read_text().replace(prefix + ".", "dlti.")
         lowered.write_text(calls)
         subprocess.run([env["FLAGTREE_CANN_OPT"], str(lowered), "-o", str(checked)], env=env, check=True)

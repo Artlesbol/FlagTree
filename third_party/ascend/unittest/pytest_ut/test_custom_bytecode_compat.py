@@ -15,9 +15,8 @@ def assign_npu():
 
 
 def test_nested_attribute_split():
-    fields = compiler._split_mlir_attributes(
-        'name = "comma, quote\\\"", mapping = affine_map<(d0) -> (d0)>, '
-        'args = [{a = 1 : i32}, {b = "x,y"}], flag')
+    fields = compiler._split_mlir_attributes('name = "comma, quote\\\"", mapping = affine_map<(d0) -> (d0)>, '
+                                             'args = [{a = 1 : i32}, {b = "x,y"}], flag')
     assert len(fields) == 4
     assert fields[-1] == "flag"
 
@@ -99,8 +98,7 @@ def test_late_unrelated_operations_unchanged():
 
 
 def test_late_storage_conversion_abi():
-    for symbol, elements in [('byte_to_word', ('i8', 'i16', 'f16')),
-                             ('word_to_byte', ('i16', 'i8', 'f16'))]:
+    for symbol, elements in [('byte_to_word', ('i8', 'i16', 'f16')), ('word_to_byte', ('i16', 'i8', 'f16'))]:
         types = ', '.join(f'memref<64x{e}, #hivm.address_space<ub>>' for e in elements)
         text = ('"builtin.module"() ({\n'
                 '    "hivm.hir.custom"(%a, %b, %tmp) '
@@ -129,8 +127,7 @@ def test_effective_dispatch_is_hashed_and_explicit_option_wins(monkeypatch):
 def test_join_lowering_policy_is_validated_and_hashed():
     from triton.backends.compiler import GPUTarget
     backend = compiler.AscendBackend(GPUTarget('npu', 'Ascend910B4', 0))
-    options = [backend.parse_options({'structured_join_lowering': value})
-               for value in ['auto', 'native', 'packed']]
+    options = [backend.parse_options({'structured_join_lowering': value}) for value in ['auto', 'native', 'packed']]
     assert len({option.hash() for option in options}) == 3
     with pytest.raises(ValueError, match='structured_join_lowering'):
         backend.parse_options({'structured_join_lowering': 'unknown'})
@@ -139,7 +136,7 @@ def test_join_lowering_policy_is_validated_and_hashed():
 @pytest.mark.parametrize('missing', ['none', 'metadata', 'binary', 'empty_binary', 'directory'])
 def test_kernel_cache_completeness(tmp_path, missing):
     from triton.runtime.cache import _is_complete_kernel_cache
-    meta, binary = tmp_path/'kernel.json', tmp_path/'kernel.npubin'
+    meta, binary = tmp_path / 'kernel.json', tmp_path / 'kernel.npubin'
     meta.write_text('{}')
     binary.write_bytes(b'ELF')
     group = {'kernel.json': str(meta), 'kernel.npubin': str(binary)}

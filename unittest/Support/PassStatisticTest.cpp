@@ -6,8 +6,7 @@
 
 namespace {
 struct StatisticOwner
-    : mlir::PassWrapper<StatisticOwner,
-                       mlir::OperationPass<mlir::ModuleOp>> {
+    : mlir::PassWrapper<StatisticOwner, mlir::OperationPass<mlir::ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(StatisticOwner)
   void runOnOperation() override {}
 };
@@ -20,7 +19,8 @@ TEST(LLVMABI, PassStatisticConstructorRespectsConsumerLayout) {
   StatisticOwner owner;
   alignas(Statistic) unsigned char storage[sizeof(Statistic) + 128];
   std::memset(storage, 0xa5, sizeof(storage));
-  auto *stat = new (storage) Statistic(&owner, "abi-probe", "ABI boundary probe");
+  auto *stat =
+      new (storage) Statistic(&owner, "abi-probe", "ABI boundary probe");
   ASSERT_EQ(owner.getStatistics().size(), 1u);
   EXPECT_EQ(owner.getStatistics().front(), stat);
   for (size_t i = sizeof(Statistic); i < sizeof(storage); ++i)

@@ -12,7 +12,7 @@ def _outputs(X, Y, T, J, Q: tl.constexpr):
     i = tl.arange(0, 4 * Q)
     v = tl.load(X + row * 4 * Q + i)
     t = tl.trans(tl.reshape(v, (4, Q)))
-    tl.store(T + row * 4 * Q + i, tl.reshape(t, (4 * Q,)))
+    tl.store(T + row * 4 * Q + i, tl.reshape(t, (4 * Q, )))
     lo, hi = tl.split(tl.reshape(t, (Q, 2, 2)))
     a, b = tl.split(lo)
     c, d = tl.split(hi)
@@ -22,7 +22,7 @@ def _outputs(X, Y, T, J, Q: tl.constexpr):
     tl.store(Y + row * 4 * Q + 2 * Q + k, c)
     tl.store(Y + row * 4 * Q + 3 * Q + k, d)
     joined = tl.join(tl.join(a, b), tl.join(c, d))
-    tl.store(J + row * 4 * Q + i, tl.reshape(joined, (4 * Q,)))
+    tl.store(J + row * 4 * Q + i, tl.reshape(joined, (4 * Q, )))
 
 
 @pytest.mark.parametrize('dtype', [torch.float16, torch.float32])
@@ -38,14 +38,13 @@ def test_grouped_store_guards_and_short_loops(dtype, offset, batch):
     size = cpu.numel()
     # Keep a full 32-byte guard on both ends while varying the GM address mod 32.
     start = 32 + offset
-    storages = [torch.full((start + size + 32,), -111, dtype=dtype, device='npu') for _ in range(3)]
+    storages = [torch.full((start + size + 32, ), -111, dtype=dtype, device='npu') for _ in range(3)]
     views = [storage[start:start + size] for storage in storages]
     for enabled in [False, True]:
         for storage in storages:
             storage.fill_(-111)
-        _outputs[(batch,)](x, *views, Q=q,
-                          structured_address_hoisting=enabled,
-                          structured_store_sync_optimization=enabled)
+        _outputs[(batch, )](x, *views, Q=q, structured_address_hoisting=enabled,
+                            structured_store_sync_optimization=enabled)
         torch.npu.synchronize()
         for storage, expected in zip(storages, [expected_y, expected_t, expected_t]):
             actual = storage.cpu()

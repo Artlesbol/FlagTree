@@ -225,7 +225,8 @@ struct HoistStructuredPermutationAddressesPass
         safe = false;
         return;
       }
-      bool beforeLoop = top != loop.getOperation() && top->isBeforeInBlock(loop);
+      bool beforeLoop =
+          top != loop.getOperation() && top->isBeforeInBlock(loop);
       // Initialization on PIPE_V is drained by prepare_addresses' leading
       // vector barrier. Other preheader accesses must pass the same physical
       // alias checks as loop accesses: an earlier DMA read can still be in
@@ -242,7 +243,8 @@ struct HoistStructuredPermutationAddressesPass
         }
       // Unknown calls/operations can hide UB accesses behind scalar addresses.
       // Only compiler-owned DMA ABIs and explicit synchronization are trusted;
-      // all their memory accesses remain covered by the descriptor checks below.
+      // all their memory accesses remain covered by the descriptor checks
+      // below.
       StringRef opName = op->getName().getStringRef();
       bool modeled = isMemoryEffectFree(op) ||
                      isa<hivm::PointerCastOp, scf::ForOp, scf::IfOp>(op) ||

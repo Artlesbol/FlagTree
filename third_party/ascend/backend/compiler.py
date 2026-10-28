@@ -130,8 +130,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
             auto_blockify_size = 1
         builder = ir.builder(mod.context)
         mod.set_attr("flagtree.auto_blockify", builder.get_bool_attr(metadata["enable_auto_blockify"]))
-        mod.set_attr("flagtree.structured_join_lowering",
-                     builder.get_string_attr(opt.structured_join_lowering))
+        mod.set_attr("flagtree.structured_join_lowering", builder.get_string_attr(opt.structured_join_lowering))
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
         ascend.passes.ttir.add_auto_blockify(pm, auto_blockify_size)
@@ -228,8 +227,7 @@ def linalg_to_bc_by_triton_mlir_opt(linalg: str, metadata, opt):
 
         triton_mlir_opt_path = _get_triton_mlir_opt_path()
         custom_compat = "hivm.hir.custom" in linalg
-        compat_options = (["--export-cann-custom-ops", "--allow-unregistered-dialect"]
-                          if custom_compat else [])
+        compat_options = (["--export-cann-custom-ops", "--allow-unregistered-dialect"] if custom_compat else [])
 
         # The --emit-bytecode flag ensures output is in BC format
         subprocess.run([
@@ -287,7 +285,7 @@ def _restore_cann_custom_ops(text, segment_arity=3):
             continue
         begin = line.index(" {", line.index(marker))
         end = line.rindex("} :")
-        fields = _split_mlir_attributes(line[begin+2:end])
+        fields = _split_mlir_attributes(line[begin + 2:end])
         properties, attrs = None, []
         for field in fields:
             if field.startswith("cann_compat.properties = "):
@@ -310,7 +308,7 @@ def _restore_cann_custom_ops(text, segment_arity=3):
                         props[i] = "operandSegmentSizes = array<i32: " + ", ".join(map(str, sizes[:2])) + ">"
             properties = "{" + ", ".join(props) + "}"
         prefix = line[:begin].replace('"cann_compat.custom"', '"hivm.hir.custom"')
-        lines.append(prefix + " <" + properties + "> {" + ", ".join(attrs) + "}" + line[end+1:])
+        lines.append(prefix + " <" + properties + "> {" + ", ".join(attrs) + "}" + line[end + 1:])
     return "".join(lines)
 
 
@@ -438,9 +436,10 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     # Parse all bitcode paths
     bitcodes = re.findall(BITCODES_REGEX, linalg)
     metadata["bitcodes"] = [val for group in bitcodes for val in group if val]
-    metadata["uses_structured_permutation"] = any(
-        name in linalg for name in ("custom_flagtree_stride_gather_", "custom_flagtree_split_",
-                                    "custom_flagtree_byte_to_word", "custom_flagtree_word_to_byte"))
+    metadata["uses_structured_permutation"] = any(name in linalg
+                                                  for name in ("custom_flagtree_stride_gather_",
+                                                               "custom_flagtree_split_", "custom_flagtree_byte_to_word",
+                                                               "custom_flagtree_word_to_byte"))
     if metadata["uses_structured_permutation"]:
         # This is a compiler-generated primitive; callers need not import TLE
         # or annotate kernels with a bitcode path. The Ascend build produces
@@ -463,8 +462,7 @@ def _configure_structured_permutation_compiler(metadata, compiler, env, tmpdir):
     tool, _ = _get_bishengir_opt_path()
     script = Path(__file__).with_name("structured_permute_hivmc.py")
     launcher = Path(tmpdir) / "hivmc"
-    launcher.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable) + " " +
-                        shlex.quote(str(script)) + ' "$@"\n')
+    launcher.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable) + " " + shlex.quote(str(script)) + ' "$@"\n')
     launcher.chmod(0o700)
     env = env.copy()
     env["FLAGTREE_REAL_HIVMC"] = str(real)
@@ -1013,8 +1011,7 @@ def get_libdevice():
 
 def get_structured_permutation_bitcode():
     import triton
-    return Path(triton.__file__).resolve().parent / (
-        "experimental/tle/language/dsa/ascend/custom_ops/custom_ops.bc")
+    return Path(triton.__file__).resolve().parent / ("experimental/tle/language/dsa/ascend/custom_ops/custom_ops.bc")
 
 
 @functools.lru_cache()
@@ -1314,8 +1311,9 @@ class AscendBackend(BaseBackend):
         optimizer = Path(_get_triton_mlir_opt_path())
         stat = optimizer.stat()
         optimizer_hash = _permutation_bitcode_hash(str(optimizer), stat.st_size, stat.st_mtime_ns)
-        adapters = tuple(hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-                         for name in ("structured_permute_hivmc.py", "structured_permute_ir.py"))
+        adapters = tuple(
+            hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+            for name in ("structured_permute_hivmc.py", "structured_permute_ir.py"))
         version_key = (self.target, implementation, optimizer_hash, adapters)
         return str(version_key)
 

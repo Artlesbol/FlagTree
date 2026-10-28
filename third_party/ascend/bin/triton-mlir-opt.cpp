@@ -27,11 +27,11 @@
 // BishengIR includes
 #include "bishengir/InitAllDialects.h"
 
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllExtensions.h"
 #include "mlir/InitAllPasses.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/Builders.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "llvm/Support/InitLLVM.h"
@@ -43,7 +43,7 @@ namespace {
 // No optimization is performed while the operation has this temporary name.
 struct ExportCANNCustomOpsPass
     : mlir::PassWrapper<ExportCANNCustomOpsPass,
-                       mlir::OperationPass<mlir::ModuleOp>> {
+                        mlir::OperationPass<mlir::ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ExportCANNCustomOpsPass)
   llvm::StringRef getArgument() const final { return "export-cann-custom-ops"; }
   llvm::StringRef getDescription() const final {

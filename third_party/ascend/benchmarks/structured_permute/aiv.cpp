@@ -4,9 +4,9 @@
 using namespace AscendC;
 
 template <typename T>
-__aicore__ inline void permute_impl(
-    GM_ADDR x, GM_ADDR z, GM_ADDR y, GM_ADDR indices, GM_ADDR t, GM_ADDR j,
-    uint32_t q, uint32_t batch, uint32_t mode) {
+__aicore__ inline void permute_impl(GM_ADDR x, GM_ADDR z, GM_ADDR y,
+                                    GM_ADDR indices, GM_ADDR t, GM_ADDR j,
+                                    uint32_t q, uint32_t batch, uint32_t mode) {
   TPipe pipe;
   TBuf<TPosition::VECCALC> input, output, index;
   const uint32_t width = (mode == 2 ? 4 : 2) * q;
@@ -49,9 +49,9 @@ __aicore__ inline void permute_impl(
     pipe_barrier(PIPE_ALL);
     if (mode == 2) {
       DataCopy(gy[row * width], in, q);
-      DataCopy(gy[row * width + q], in[2*q], q);
-      DataCopy(gy[row * width + 2*q], in[q], q);
-      DataCopy(gy[row * width + 3*q], in[3*q], q);
+      DataCopy(gy[row * width + q], in[2 * q], q);
+      DataCopy(gy[row * width + 2 * q], in[q], q);
+      DataCopy(gy[row * width + 3 * q], in[3 * q], q);
       DataCopy(gt[row * width], out, width);
       DataCopy(gj[row * width], out, width);
     } else {
@@ -61,9 +61,10 @@ __aicore__ inline void permute_impl(
   }
 }
 
-extern "C" __global__ __aicore__ void permute_aiv(
-    GM_ADDR x, GM_ADDR z, GM_ADDR y, GM_ADDR indices, GM_ADDR t, GM_ADDR j,
-    uint32_t q, uint32_t batch, uint32_t mode, uint32_t element_bytes) {
+extern "C" __global__ __aicore__ void
+permute_aiv(GM_ADDR x, GM_ADDR z, GM_ADDR y, GM_ADDR indices, GM_ADDR t,
+            GM_ADDR j, uint32_t q, uint32_t batch, uint32_t mode,
+            uint32_t element_bytes) {
   KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);
   if (element_bytes == 2)
     permute_impl<uint16_t>(x, z, y, indices, t, j, q, batch, mode);

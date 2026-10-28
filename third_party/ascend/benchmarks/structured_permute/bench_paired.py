@@ -49,10 +49,9 @@ def main():
         if name != 'aiv':
             dump = out.with_suffix('') / name
             os.environ['FLAGTREE_PERMUTE_DUMP_DIR'] = str(dump)
-            kernel = nested_kernel[(batch,)](
-                x, z, y, t, j, Q=q,
-                structured_address_hoisting=name in ('addresses', 'optimized'),
-                structured_store_sync_optimization=name in ('stores', 'optimized'))
+            kernel = nested_kernel[(batch, )](x, z, y, t, j, Q=q, structured_address_hoisting=name
+                                              in ('addresses', 'optimized'), structured_store_sync_optimization=name
+                                              in ('stores', 'optimized'))
             run = kernel[(batch, 1, 1)]
 
             def launch():
@@ -76,9 +75,9 @@ def main():
             index = (((i // 4) + (i % 4) * q) * x.element_size()).to(torch.int32).npu()
 
             def launch():
-                rc = call(blocks, torch.npu.current_stream().npu_stream,
-                          x.data_ptr(), z.data_ptr(), y.data_ptr(), index.data_ptr(),
-                          t.data_ptr(), j.data_ptr(), q, batch, 2, x.element_size())
+                rc = call(blocks,
+                          torch.npu.current_stream().npu_stream, x.data_ptr(), z.data_ptr(), y.data_ptr(),
+                          index.data_ptr(), t.data_ptr(), j.data_ptr(), q, batch, 2, x.element_size())
                 if rc:
                     raise RuntimeError(f'AIV launch failed: {rc}')
 
@@ -117,9 +116,8 @@ def main():
             verify()
     for row in rows.values():
         row['us_per_row'] = statistics.median(row['rounds_us']) / batch
-    result = dict(status='pass', q=q, batch=batch, dtype=args.dtype, mode=mode,
-                  launch_blocks=blocks, graph_steps=steps, iters=iters, rounds=rounds,
-                  warmup=10, same_inputs_and_outputs=True, replay_outputs_verified=True,
+    result = dict(status='pass', q=q, batch=batch, dtype=args.dtype, mode=mode, launch_blocks=blocks, graph_steps=steps,
+                  iters=iters, rounds=rounds, warmup=10, same_inputs_and_outputs=True, replay_outputs_verified=True,
                   rotated_order=True, policies=rows, package=triton.__file__)
     out.write_text(json.dumps(result, indent=2, default=str) + '\n')
     print({key: row['us_per_row'] for key, row in rows.items()}, flush=True)

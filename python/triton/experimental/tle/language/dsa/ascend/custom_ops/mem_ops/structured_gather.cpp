@@ -2,17 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Private compiler primitive: logical element indices, arbitrary UB strides.
 #include "Utils.h"
-#include "Vector/VecUtils.h"
 #include "Vector/Arange/ArangeUtils.h"
+#include "Vector/VecUtils.h"
 #include <type_traits>
 
 template <typename T>
 __aiv__ __attribute__((always_inline)) void structured_gather(
-    memref_t<__ubuf__ T, 1> *src,
-    memref_t<__ubuf__ int32_t, 1> *indices,
-    memref_t<__ubuf__ T, 1> *dst,
-    memref_t<__ubuf__ int32_t, 1> *addresses) {
-  using Bits = typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
+    memref_t<__ubuf__ T, 1> *src, memref_t<__ubuf__ int32_t, 1> *indices,
+    memref_t<__ubuf__ T, 1> *dst, memref_t<__ubuf__ int32_t, 1> *addresses) {
+  using Bits =
+      typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
   const int64_t n = indices->sizes[0];
   auto src_ptr = reinterpret_cast<__ubuf__ Bits *>(src->aligned + src->offset);
   auto dst_ptr = reinterpret_cast<__ubuf__ Bits *>(dst->aligned + dst->offset);
@@ -24,7 +23,8 @@ __aiv__ __attribute__((always_inline)) void structured_gather(
   // packed case below has no data-length scalar loop, even for strided src.
   if (indices->strides[0] != 1 || addresses->strides[0] != 1 ||
       dst->strides[0] != 1 || !isAddress32ByteAligned(dst_ptr) ||
-      !isAddress32ByteAligned(idx_ptr) || !isAddress32ByteAligned(address_ptr)) {
+      !isAddress32ByteAligned(idx_ptr) ||
+      !isAddress32ByteAligned(address_ptr)) {
     INTRINSIC(set_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
     INTRINSIC(wait_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
     for (int64_t i = 0; i < n; ++i)
@@ -38,27 +38,28 @@ __aiv__ __attribute__((always_inline)) void structured_gather(
 
   // All arithmetic acts on logical indices; padding is never a data element.
   const int32_t scale = src->strides[0] * sizeof(T);
-  const int32_t base = static_cast<int32_t>(reinterpret_cast<intptr_t>(src_ptr));
+  const int32_t base =
+      static_cast<int32_t>(reinterpret_cast<intptr_t>(src_ptr));
   vector_eltwise_vs_1d<VectorOpTy::VMULS>(indices, scale, addresses);
   INTRINSIC(pipe_barrier, PIPE_V);
   vector_eltwise_vs_1d<VectorOpTy::VADDS>(addresses, base, addresses);
   INTRINSIC(pipe_barrier, PIPE_V);
-  auto addr_ptr = reinterpret_cast<__ubuf__ uint32_t *>(
-      addresses->aligned + addresses->offset);
+  auto addr_ptr = reinterpret_cast<__ubuf__ uint32_t *>(addresses->aligned +
+                                                        addresses->offset);
   INTRINSIC_NO_ARGS(set_mask_count);
   INTRINSIC(set_vector_mask, 0, n);
   INTRINSIC(vgather, dst_ptr, addr_ptr, 0, 8, 1);
   INTRINSIC_NO_ARGS(set_mask_norm);
 }
 
-#define REGISTER_STRUCTURED_GATHER(SUFFIX, TYPE)                                \
-  extern "C" __aiv__ __attribute__((always_inline)) void                         \
-      _mlir_ciface_custom_flagtree_stride_gather_##SUFFIX(                       \
-          memref_t<__ubuf__ TYPE, 1> *src,                                      \
-          memref_t<__ubuf__ int32_t, 1> *indices,                               \
-          memref_t<__ubuf__ TYPE, 1> *dst,                                      \
-          memref_t<__ubuf__ int32_t, 1> *addresses) {                           \
-    structured_gather(src, indices, dst, addresses);                             \
+#define REGISTER_STRUCTURED_GATHER(SUFFIX, TYPE)                               \
+  extern "C" __aiv__ __attribute__((always_inline)) void                       \
+      _mlir_ciface_custom_flagtree_stride_gather_##SUFFIX(                     \
+          memref_t<__ubuf__ TYPE, 1> *src,                                     \
+          memref_t<__ubuf__ int32_t, 1> *indices,                              \
+          memref_t<__ubuf__ TYPE, 1> *dst,                                     \
+          memref_t<__ubuf__ int32_t, 1> *addresses) {                          \
+    structured_gather(src, indices, dst, addresses);                           \
   }
 
 REGISTER_STRUCTURED_GATHER(half, half)
@@ -68,10 +69,12 @@ REGISTER_STRUCTURED_GATHER(int16, int16_t)
 REGISTER_STRUCTURED_GATHER(int32, int32_t)
 
 template <typename T>
-__aiv__ __attribute__((always_inline)) void structured_split(
-    memref_t<__ubuf__ T, 1> *src, memref_t<__ubuf__ T, 1> *lhs,
-    memref_t<__ubuf__ T, 1> *rhs, memref_t<__ubuf__ int32_t, 1> *addresses) {
-  using Bits = typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
+__aiv__ __attribute__((always_inline)) void
+structured_split(memref_t<__ubuf__ T, 1> *src, memref_t<__ubuf__ T, 1> *lhs,
+                 memref_t<__ubuf__ T, 1> *rhs,
+                 memref_t<__ubuf__ int32_t, 1> *addresses) {
+  using Bits =
+      typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
   const int64_t n = lhs->sizes[0];
   auto in = reinterpret_cast<__ubuf__ Bits *>(src->aligned + src->offset);
   auto a = reinterpret_cast<__ubuf__ Bits *>(lhs->aligned + lhs->offset);
@@ -86,8 +89,9 @@ __aiv__ __attribute__((always_inline)) void structured_split(
     INTRINSIC_NO_ARGS(set_mask_norm);
     return;
   }
-  if (lhs->strides[0] == 1 && rhs->strides[0] == 1 && addresses->strides[0] == 1 &&
-      alignedOutputs && isAddress32ByteAligned(addresses->aligned + addresses->offset)) {
+  if (lhs->strides[0] == 1 && rhs->strides[0] == 1 &&
+      addresses->strides[0] == 1 && alignedOutputs &&
+      isAddress32ByteAligned(addresses->aligned + addresses->offset)) {
     const int32_t scale = src->strides[0] * sizeof(T);
     const int32_t base = static_cast<int32_t>(reinterpret_cast<intptr_t>(in));
     auto addr = addresses->aligned + addresses->offset;
@@ -116,14 +120,13 @@ __aiv__ __attribute__((always_inline)) void structured_split(
   INTRINSIC(wait_flag, PIPE_S, PIPE_V, LIB_EVENT_ID0);
 }
 
-#define REGISTER_STRUCTURED_SPLIT(SUFFIX, TYPE)                                 \
-  extern "C" __aiv__ __attribute__((always_inline)) void                         \
-      _mlir_ciface_custom_flagtree_split_##SUFFIX(                              \
-          memref_t<__ubuf__ TYPE, 1> *src,                                      \
-          memref_t<__ubuf__ TYPE, 1> *lhs,                                      \
-          memref_t<__ubuf__ TYPE, 1> *rhs,                                      \
-          memref_t<__ubuf__ int32_t, 1> *addresses) {                           \
-    structured_split(src, lhs, rhs, addresses);                                 \
+#define REGISTER_STRUCTURED_SPLIT(SUFFIX, TYPE)                                \
+  extern "C" __aiv__ __attribute__((always_inline)) void                       \
+      _mlir_ciface_custom_flagtree_split_##SUFFIX(                             \
+          memref_t<__ubuf__ TYPE, 1> *src, memref_t<__ubuf__ TYPE, 1> *lhs,    \
+          memref_t<__ubuf__ TYPE, 1> *rhs,                                     \
+          memref_t<__ubuf__ int32_t, 1> *addresses) {                          \
+    structured_split(src, lhs, rhs, addresses);                                \
   }
 
 REGISTER_STRUCTURED_SPLIT(half, half)
@@ -137,16 +140,20 @@ REGISTER_STRUCTURED_SPLIT(int32, int32_t)
 // conversion or CANN's sub-block 2D cast is required.
 template <bool EXTEND>
 __aiv__ __attribute__((always_inline)) void storage_cast(
-    memref_t<__ubuf__ typename std::conditional<EXTEND, int8_t, int16_t>::type, 1> *src,
-    memref_t<__ubuf__ typename std::conditional<EXTEND, int16_t, int8_t>::type, 1> *dst,
+    memref_t<__ubuf__ typename std::conditional<EXTEND, int8_t, int16_t>::type,
+             1> *src,
+    memref_t<__ubuf__ typename std::conditional<EXTEND, int16_t, int8_t>::type,
+             1> *dst,
     memref_t<__ubuf__ half, 1> *scratch) {
   auto in = src->aligned + src->offset;
   auto out = dst->aligned + dst->offset;
   auto tmp = scratch->aligned + scratch->offset;
   const int64_t n = dst->sizes[0];
-  if (src->strides[0] != 1 || dst->strides[0] != 1 || scratch->strides[0] != 1 ||
+  if (src->strides[0] != 1 || dst->strides[0] != 1 ||
+      scratch->strides[0] != 1 ||
       ((reinterpret_cast<intptr_t>(in) | reinterpret_cast<intptr_t>(out) |
-        reinterpret_cast<intptr_t>(tmp)) & 31)) {
+        reinterpret_cast<intptr_t>(tmp)) &
+       31)) {
     INTRINSIC(set_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
     INTRINSIC(wait_flag, PIPE_V, PIPE_S, LIB_EVENT_ID0);
     for (int64_t i = 0; i < n; ++i)
@@ -171,13 +178,15 @@ __aiv__ __attribute__((always_inline)) void storage_cast(
 
 extern "C" __aiv__ __attribute__((always_inline)) void
 _mlir_ciface_custom_flagtree_byte_to_word(memref_t<__ubuf__ int8_t, 1> *src,
-    memref_t<__ubuf__ int16_t, 1> *dst, memref_t<__ubuf__ half, 1> *scratch) {
+                                          memref_t<__ubuf__ int16_t, 1> *dst,
+                                          memref_t<__ubuf__ half, 1> *scratch) {
   storage_cast<true>(src, dst, scratch);
 }
 
 extern "C" __aiv__ __attribute__((always_inline)) void
 _mlir_ciface_custom_flagtree_word_to_byte(memref_t<__ubuf__ int16_t, 1> *src,
-    memref_t<__ubuf__ int8_t, 1> *dst, memref_t<__ubuf__ half, 1> *scratch) {
+                                          memref_t<__ubuf__ int8_t, 1> *dst,
+                                          memref_t<__ubuf__ half, 1> *scratch) {
   storage_cast<false>(src, dst, scratch);
 }
 
@@ -187,8 +196,8 @@ _mlir_ciface_custom_flagtree_word_to_byte(memref_t<__ubuf__ int16_t, 1> *src,
 extern "C" __aiv__ __attribute__((always_inline)) void
 _mlir_ciface_custom_flagtree_prepare_addresses(
     memref_t<__ubuf__ int32_t, 1> *table_a,
-    memref_t<__ubuf__ int32_t, 1> *table_b,
-    int32_t scale, int32_t base_a, int32_t base_b) {
+    memref_t<__ubuf__ int32_t, 1> *table_b, int32_t scale, int32_t base_a,
+    int32_t base_b) {
   INTRINSIC(pipe_barrier, PIPE_V);
   vector_eltwise_vs_1d<VectorOpTy::VMULS>(table_a, scale, table_b);
   INTRINSIC(pipe_barrier, PIPE_V);
@@ -199,21 +208,26 @@ _mlir_ciface_custom_flagtree_prepare_addresses(
 }
 
 template <typename T>
-__aiv__ __attribute__((always_inline)) void addressed_gather(
-    memref_t<__ubuf__ int32_t, 1> *table, memref_t<__ubuf__ T, 1> *dst) {
-  using Bits = typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
+__aiv__ __attribute__((always_inline)) void
+addressed_gather(memref_t<__ubuf__ int32_t, 1> *table,
+                 memref_t<__ubuf__ T, 1> *dst) {
+  using Bits =
+      typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
   auto out = reinterpret_cast<__ubuf__ Bits *>(dst->aligned + dst->offset);
-  auto addresses = reinterpret_cast<__ubuf__ uint32_t *>(table->aligned + table->offset);
+  auto addresses =
+      reinterpret_cast<__ubuf__ uint32_t *>(table->aligned + table->offset);
   INTRINSIC_NO_ARGS(set_mask_count);
   INTRINSIC(set_vector_mask, 0, dst->sizes[0]);
   INTRINSIC(vgather, out, addresses, 0, 8, 1);
   INTRINSIC_NO_ARGS(set_mask_norm);
 }
-#define REGISTER_ADDRESSED_GATHER(SUFFIX, TYPE)                                 \
-  extern "C" __aiv__ __attribute__((always_inline)) void                         \
-      _mlir_ciface_custom_flagtree_addressed_gather_##SUFFIX(                     \
-          memref_t<__ubuf__ int32_t, 1> *table,                                  \
-          memref_t<__ubuf__ TYPE, 1> *dst) { addressed_gather(table, dst); }
+#define REGISTER_ADDRESSED_GATHER(SUFFIX, TYPE)                                \
+  extern "C" __aiv__ __attribute__((always_inline)) void                       \
+      _mlir_ciface_custom_flagtree_addressed_gather_##SUFFIX(                  \
+          memref_t<__ubuf__ int32_t, 1> *table,                                \
+          memref_t<__ubuf__ TYPE, 1> *dst) {                                   \
+    addressed_gather(table, dst);                                              \
+  }
 REGISTER_ADDRESSED_GATHER(half, half)
 REGISTER_ADDRESSED_GATHER(bf16, bfloat16_t)
 REGISTER_ADDRESSED_GATHER(float, float)

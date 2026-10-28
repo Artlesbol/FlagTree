@@ -22,20 +22,22 @@ def worker(args):
         compiler.get_structured_permutation_bitcode = lambda: args.bitcode.resolve()
     calls = []
     real_run = subprocess.run
+
     def traced(cmd, *pos, **kw):
         if isinstance(cmd, (tuple, list)) and cmd:
             executable = Path(str(cmd[0])).name
             if executable in ('triton-mlir-opt', 'bishengir-opt', 'bishengir-compile', 'hivmc'):
                 calls.append(executable)
         return real_run(cmd, *pos, **kw)
+
     subprocess.run = traced
     torch.npu.set_device(0)
     q, batch = 32, 41
-    cpu = torch.arange(batch*4*q, dtype=torch.int32).remainder(97).float()
-    x, z = cpu.npu(), torch.zeros(batch*q, device='npu')
+    cpu = torch.arange(batch * 4 * q, dtype=torch.int32).remainder(97).float()
+    x, z = cpu.npu(), torch.zeros(batch * q, device='npu')
     y, t, j = [torch.full_like(x, -111) for _ in range(3)]
     options = {} if args.explicit is None else {'enable_auto_blockify': bool(args.explicit)}
-    kernel = nested_kernel[(batch,)](x, z, y, t, j, Q=q, **options)
+    kernel = nested_kernel[(batch, )](x, z, y, t, j, Q=q, **options)
     torch.npu.synchronize()
     ref = cpu.reshape(batch, 4, q)
     expected = ref[:, [0, 2, 1, 3], :].reshape(-1)
@@ -43,36 +45,35 @@ def worker(args):
     verified = (torch.equal(y.cpu(), expected) and torch.equal(t.cpu(), transposed)
                 and torch.equal(j.cpu(), transposed))
     bitcode = compiler.get_structured_permutation_bitcode()
-    result = dict(status='pass' if verified else 'wrong_output', outputs_verified=verified,
-                  hash=kernel.hash, compiler_calls=calls,
-                  enable_auto_blockify=kernel.metadata.enable_auto_blockify,
+    result = dict(status='pass' if verified else 'wrong_output', outputs_verified=verified, hash=kernel.hash,
+                  compiler_calls=calls, enable_auto_blockify=kernel.metadata.enable_auto_blockify,
                   uses_structured_permutation=kernel.metadata.uses_structured_permutation,
-                  metadata_group=kernel.metadata_group,
-                  bitcode_sha256=hashlib.sha256(bitcode.read_bytes()).hexdigest(),
+                  metadata_group=kernel.metadata_group, bitcode_sha256=hashlib.sha256(bitcode.read_bytes()).hexdigest(),
                   package=triton.__file__, backend=compiler.__file__)
-    args.output.write_text(json.dumps(result, indent=2, default=str)+'\n')
+    args.output.write_text(json.dumps(result, indent=2, default=str) + '\n')
     assert verified, result
 
 
 def suite(args):
     root = args.root.resolve()
     root.mkdir(parents=True, exist_ok=True)
-    cache = root/'cache'
+    cache = root / 'cache'
     assert not cache.exists(), 'Use a new result directory; cold-cache checks must really be cold'
     records = {}
+
     def run(name, auto, explicit=None, bitcode=None, binary_only=False):
         env = os.environ.copy()
         env.pop('TRITON_ALWAYS_COMPILE', None)
-        env['TRITON_CACHE_DIR'] = str(root/'cache-binary-only' if binary_only else cache)
+        env['TRITON_CACHE_DIR'] = str(root / 'cache-binary-only' if binary_only else cache)
         if binary_only: env['TRITON_STORE_BINARY_ONLY'] = '1'
         else: env.pop('TRITON_STORE_BINARY_ONLY', None)
         env['TRITON_ALL_BLOCKS_PARALLEL'] = str(auto)
-        cmd = [sys.executable, str(Path(__file__).resolve()), '--worker', '--output', str(root/(name+'.json'))]
+        cmd = [sys.executable, str(Path(__file__).resolve()), '--worker', '--output', str(root / (name + '.json'))]
         if explicit is not None: cmd += ['--explicit', str(explicit)]
         if bitcode: cmd += ['--bitcode', str(bitcode)]
-        with (root/(name+'.log')).open('w') as log:
+        with (root / (name + '.log')).open('w') as log:
             result = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT)
-        path = root/(name+'.json')
+        path = root / (name + '.json')
         row = json.loads(path.read_text()) if path.exists() else {'status': 'child_failed'}
         assert result.returncode == 0 and row['status'] == 'pass', (name, row)
         records[name] = row
@@ -103,7 +104,7 @@ def suite(args):
     # Link a valid, unused function into a private copy of the device library.
     from triton.backends.ascend.compiler import get_structured_permutation_bitcode
     original = get_structured_permutation_bitcode()
-    probe, probe_bc, variant = root/'probe.ll', root/'probe.bc', root/'variant.bc'
+    probe, probe_bc, variant = root / 'probe.ll', root / 'probe.bc', root / 'variant.bc'
     probe.write_text('define internal void @flagtree_cache_contract_probe() { ret void }\n')
     subprocess.run([args.llvm_as, str(probe), '-o', str(probe_bc)], check=True)
     subprocess.run([args.llvm_link, str(original), str(probe_bc), '-o', str(variant)], check=True)
@@ -118,8 +119,10 @@ def suite(args):
     binary_hot = run('binary-only-hot', 0, binary_only=True)
     assert binary_cold['hash'] == binary_hot['hash'] and not binary_hot['compiler_calls']
     assert any(name.endswith('.npubin') for name in binary_cold['metadata_group'])
-    assert not any(name.endswith(('.ttir', '.ttadapter', '.mlirbc', '.bcmlir')) for name in binary_cold['metadata_group'])
-    (root/'summary.json').write_text(json.dumps(dict(status='pass', cases=len(records), records=records), indent=2)+'\n')
+    assert not any(
+        name.endswith(('.ttir', '.ttadapter', '.mlirbc', '.bcmlir')) for name in binary_cold['metadata_group'])
+    (root /
+     'summary.json').write_text(json.dumps(dict(status='pass', cases=len(records), records=records), indent=2) + '\n')
     print(f'PASS: {len(records)} cross-process cache contracts', flush=True)
 
 

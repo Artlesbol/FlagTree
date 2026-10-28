@@ -57,28 +57,28 @@ def lower_private_ops(text):
         if '"hivm.hir.custom"' not in line or 'custom_flagtree_' not in line:
             output.append(line)
             continue
-        match = re.fullmatch(
-            r'(\s*)"hivm\.hir\.custom"\(([^)]*)\)(.*) : \((.*)\) -> \(\)\s*', line)
+        match = re.fullmatch(r'(\s*)"hivm\.hir\.custom"\(([^)]*)\)(.*) : \((.*)\) -> \(\)\s*', line)
         if not match:
             raise ValueError('Expected a result-free, bufferized private custom operation')
         indent, operands, attrs, types = match.groups()
-        symbol = re.search(r'\bsymbol = "(custom_flagtree_(?:(?:stride_gather|split)_'
-                           r'(?:half|bf16|float|int16|int32)|byte_to_word|word_to_byte))"', attrs)
+        symbol = re.search(
+            r'\bsymbol = "(custom_flagtree_(?:(?:stride_gather|split)_'
+            r'(?:half|bf16|float|int16|int32)|byte_to_word|word_to_byte))"', attrs)
         if not symbol:
             raise ValueError('Unknown FlagTree structured permutation ABI')
         name = symbol[1]
         operands, types = split_fields(operands), split_fields(types)
         cast = name.endswith(('byte_to_word', 'word_to_byte'))
         arity = 3 if cast else 4
-        if len(operands) != arity or len(types) != arity or any(
-                not re.fullmatch(r'%[\w.$-]+(?:#\d+)?', v) for v in operands):
+        if len(operands) != arity or len(types) != arity or any(not re.fullmatch(r'%[\w.$-]+(?:#\d+)?', v)
+                                                                for v in operands):
             raise ValueError('Invalid structured permutation operands')
         canonical = [_canonical_memref(t) for t in types]
         if cast:
             expected = ['i8', 'i16', 'f16'] if name.endswith('byte_to_word') else ['i16', 'i8', 'f16']
         else:
             elem = dict(half='f16', bf16='bf16', float='f32', int16='i16', int32='i32')[name.rsplit('_', 1)[1]]
-            expected = [elem, 'i32', elem, 'i32'] if 'stride_gather' in name else [elem]*3 + ['i32']
+            expected = [elem, 'i32', elem, 'i32'] if 'stride_gather' in name else [elem] * 3 + ['i32']
         if any(not t.startswith('memref<?x' + e + ',') for t, e in zip(canonical, expected)):
             raise ValueError('Private operation symbol and operand types disagree')
         if name in declarations and declarations[name] != canonical:

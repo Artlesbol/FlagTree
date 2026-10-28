@@ -1,6 +1,7 @@
 """Device regression for grouped outputs, small-loop dispatch, and GM offsets."""
 import pytest
 import torch
+import torch_npu
 import triton
 import triton.language as tl
 

@@ -227,6 +227,23 @@ struct HoistStructuredPermutationAddressesPass
       }
       if (top != loop.getOperation() && top->isBeforeInBlock(loop))
         return;
+      // Unknown calls/operations can hide UB accesses behind scalar addresses.
+      // Only compiler-owned DMA ABIs and explicit synchronization are trusted;
+      // all their memory accesses remain covered by the descriptor checks below.
+      StringRef opName = op->getName().getStringRef();
+      bool modeled = isMemoryEffectFree(op) ||
+                     isa<hivm::PointerCastOp, scf::ForOp, scf::IfOp>(op) ||
+                     opName == "hivm.hir.set_flag" ||
+                     opName == "hivm.hir.wait_flag" ||
+                     opName == "hivm.hir.pipe_barrier" ||
+                     opName == "hivm.hir.set_mask_norm";
+      if (auto other = dyn_cast<func::CallOp>(op))
+        modeled = other.getCallee().starts_with("load_gm_to_ubuf_1d_") ||
+                  other.getCallee().starts_with("store_ubuf_to_gm_1d_");
+      if (!modeled) {
+        safe = false;
+        return;
+      }
       for (Value value : op->getOperands()) {
         auto type = dyn_cast<MemRefType>(value.getType());
         if (!type || type.getMemorySpace() != indices->space)

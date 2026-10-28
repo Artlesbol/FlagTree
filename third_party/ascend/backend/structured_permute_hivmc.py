@@ -4,6 +4,7 @@ Uses the installed CANN optimizer and leaves all SDK files unchanged. This
 entrypoint is installed as a temporary hivmc launcher by the Ascend backend.
 """
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -41,7 +42,25 @@ def main():
         cmd = [env["FLAGTREE_CANN_OPT"], str(source), "--mlir-print-op-generic",
                "--mlir-print-local-scope", "-o", str(generic)]
         subprocess.run(cmd, env=env, check=True)
-        lowered.write_text(lower_private_ops(generic.read_text()))
+        calls = lower_private_ops(generic.read_text())
+        if (env.get("FLAGTREE_PERMUTE_ADDRESS_HOIST") == "1" and
+                '"scf.for"' in calls and "func.call @custom_flagtree_stride_gather_" in calls):
+            # DLTI target-system assembly changed between LLVM versions. Keep
+            # this metadata opaque during optimization, then restore it exactly.
+            prefix = "flagtree_opaque_dlti"
+            while prefix in calls:
+                prefix += "_"
+            transported = re.sub(r"\bdlti\.", prefix + ".", calls)
+            opaque = Path(tmp) / "kernel.opaque.mlir"
+            optimized = Path(tmp) / "kernel.optimized.mlir"
+            opaque.write_text(transported)
+            subprocess.run([env["FLAGTREE_PERMUTE_OPT"], str(opaque),
+                            "--allow-unregistered-dialect",
+                            "--hoist-structured-permutation-addresses",
+                            "--mlir-print-local-scope", "-o", str(optimized)],
+                           env=env, check=True)
+            calls = optimized.read_text().replace(prefix + ".", "dlti.")
+        lowered.write_text(calls)
         subprocess.run([env["FLAGTREE_CANN_OPT"], str(lowered), "-o", str(checked)], env=env, check=True)
         if target:
             shutil.copy2(checked, target / "after.mlir")

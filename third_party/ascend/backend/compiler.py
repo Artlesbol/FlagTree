@@ -469,6 +469,8 @@ def _configure_structured_permutation_compiler(metadata, compiler, env, tmpdir):
     env = env.copy()
     env["FLAGTREE_REAL_HIVMC"] = str(real)
     env["FLAGTREE_CANN_OPT"] = tool
+    env["FLAGTREE_PERMUTE_OPT"] = _get_triton_mlir_opt_path()
+    env["FLAGTREE_PERMUTE_ADDRESS_HOIST"] = str(int(metadata["structured_address_hoisting"]))
     env["FLAGTREE_ORIGINAL_BISHENG_INSTALL_PATH"] = env.get("BISHENG_INSTALL_PATH", "")
     env["BISHENG_INSTALL_PATH"] = tmpdir
     return env
@@ -1043,6 +1045,7 @@ class NPUOptions:
     auto_blockify_size: int = 1
     enable_auto_blockify: bool = None
     structured_join_lowering: str = "auto"
+    structured_address_hoisting: bool = True
     compile_on_910_95: bool = is_compile_on_910_95
     optimize_dynamic_offset: bool = False
     enable_mask_fallback_conversion: bool = False
@@ -1133,6 +1136,8 @@ class NPUOptions:
     disable_fma: bool = False
 
     def __post_init__(self):
+        if type(self.structured_address_hoisting) is not bool:
+            raise ValueError("structured_address_hoisting must be a bool")
         if self.structured_join_lowering not in ("auto", "native", "packed"):
             raise ValueError("structured_join_lowering must be auto, native or packed")
         # Parse compile_mode and set related fields
@@ -1303,7 +1308,12 @@ class AscendBackend(BaseBackend):
             implementation = _permutation_bitcode_hash(str(bitcode), stat.st_size, stat.st_mtime_ns)
         else:
             implementation = "missing-permutation-bitcode"
-        version_key = (self.target, implementation)
+        optimizer = Path(_get_triton_mlir_opt_path())
+        stat = optimizer.stat()
+        optimizer_hash = _permutation_bitcode_hash(str(optimizer), stat.st_size, stat.st_mtime_ns)
+        adapters = tuple(hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+                         for name in ("structured_permute_hivmc.py", "structured_permute_ir.py"))
+        version_key = (self.target, implementation, optimizer_hash, adapters)
         return str(version_key)
 
     def get_module_map(self) -> Dict[str, ModuleType]:

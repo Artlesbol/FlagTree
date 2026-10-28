@@ -180,3 +180,42 @@ _mlir_ciface_custom_flagtree_word_to_byte(memref_t<__ubuf__ int16_t, 1> *src,
     memref_t<__ubuf__ int8_t, 1> *dst, memref_t<__ubuf__ half, 1> *scratch) {
   storage_cast<false>(src, dst, scratch);
 }
+
+// Late compiler optimization: reuse the two existing private index buffers as
+// absolute address tables. The compiler proves exclusive use and fixed packed
+// physical layouts before selecting this ABI. No new UB storage is required.
+extern "C" __aiv__ __attribute__((always_inline)) void
+_mlir_ciface_custom_flagtree_prepare_addresses(
+    memref_t<__ubuf__ int32_t, 1> *table_a,
+    memref_t<__ubuf__ int32_t, 1> *table_b,
+    int32_t scale, int32_t base_a, int32_t base_b) {
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vs_1d<VectorOpTy::VMULS>(table_a, scale, table_b);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vs_1d<VectorOpTy::VADDS>(table_b, base_a, table_a);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vs_1d<VectorOpTy::VADDS>(table_b, base_b, table_b);
+  INTRINSIC(pipe_barrier, PIPE_V);
+}
+
+template <typename T>
+__aiv__ __attribute__((always_inline)) void addressed_gather(
+    memref_t<__ubuf__ int32_t, 1> *table, memref_t<__ubuf__ T, 1> *dst) {
+  using Bits = typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
+  auto out = reinterpret_cast<__ubuf__ Bits *>(dst->aligned + dst->offset);
+  auto addresses = reinterpret_cast<__ubuf__ uint32_t *>(table->aligned + table->offset);
+  INTRINSIC_NO_ARGS(set_mask_count);
+  INTRINSIC(set_vector_mask, 0, dst->sizes[0]);
+  INTRINSIC(vgather, out, addresses, 0, 8, 1);
+  INTRINSIC_NO_ARGS(set_mask_norm);
+}
+#define REGISTER_ADDRESSED_GATHER(SUFFIX, TYPE)                                 \
+  extern "C" __aiv__ __attribute__((always_inline)) void                         \
+      _mlir_ciface_custom_flagtree_addressed_gather_##SUFFIX(                     \
+          memref_t<__ubuf__ int32_t, 1> *table,                                  \
+          memref_t<__ubuf__ TYPE, 1> *dst) { addressed_gather(table, dst); }
+REGISTER_ADDRESSED_GATHER(half, half)
+REGISTER_ADDRESSED_GATHER(bf16, bfloat16_t)
+REGISTER_ADDRESSED_GATHER(float, float)
+REGISTER_ADDRESSED_GATHER(int16, int16_t)
+REGISTER_ADDRESSED_GATHER(int32, int32_t)

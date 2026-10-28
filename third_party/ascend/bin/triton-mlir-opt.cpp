@@ -22,6 +22,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "./RegisterTritonDialects.h"
+#include "StructuredPermutationOpt.h"
 
 // BishengIR includes
 #include "bishengir/InitAllDialects.h"
@@ -77,6 +78,7 @@ struct ExportCANNCustomOpsPass
 
 int main(int argc, char **argv) {
   mlir::PassRegistration<ExportCANNCustomOpsPass>();
+  mlir::PassRegistration<HoistStructuredPermutationAddressesPass>();
   // Register all MLIR dialects and passes
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);

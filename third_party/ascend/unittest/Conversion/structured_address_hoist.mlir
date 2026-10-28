@@ -790,4 +790,3 @@ func.func @before_loop_vector_init(%unknown: memref<?xi32, strided<[?], offset: 
 
     return
 }
-

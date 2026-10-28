@@ -27,7 +27,7 @@ def main():
     torch.npu.set_device(0)
     q, batch, steps, iters, rounds = args.q, args.batch, 64, 100, 5
     mode = int(os.environ.get('TRITON_ALL_BLOCKS_PARALLEL', '0'))
-    blocks = 40 if mode else batch
+    blocks = min(batch, 40) if mode else batch
     dtype = getattr(torch, args.dtype)
     out = args.output
     out.parent.mkdir(parents=True, exist_ok=True)

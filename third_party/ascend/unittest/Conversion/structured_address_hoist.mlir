@@ -28,15 +28,15 @@ func.func @packed_double(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -59,14 +59,14 @@ func.func @packed_single(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %ss = memref.cast %sa : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -89,15 +89,15 @@ func.func @unaligned_source(%unknown: memref<?xi32, strided<[?], offset: ?>, #hi
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -120,7 +120,7 @@ func.func @index_extra_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hi
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
@@ -128,7 +128,7 @@ func.func @index_extra_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hi
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
       func.call @store_ubuf_to_gm_1d_int32_t(%ii, %gm, %atomic0) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
     }
-    
+
     return
 }
 
@@ -151,7 +151,7 @@ func.func @physical_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
@@ -161,7 +161,7 @@ func.func @physical_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm
       %alias_d = memref.cast %alias : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @store_ubuf_to_gm_1d_int32_t(%alias_d, %gm, %atomic0) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
     }
-    
+
     return
 }
 
@@ -184,7 +184,7 @@ func.func @unknown_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
@@ -192,7 +192,7 @@ func.func @unknown_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
       func.call @store_ubuf_to_gm_1d_int32_t(%unknown, %gm, %atomic0) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
     }
-    
+
     return
 }
 
@@ -215,7 +215,7 @@ func.func @index_write(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.ad
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
@@ -223,7 +223,7 @@ func.func @index_write(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.ad
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
       func.call @mutate(%ii) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
     }
-    
+
     return
 }
 
@@ -246,13 +246,13 @@ func.func @after_loop_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hiv
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
     func.call @store_ubuf_to_gm_1d_int32_t(%ii, %gm, %atomic0) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
     return
@@ -277,15 +277,15 @@ func.func @strided_indices(%unknown: memref<?xi32, strided<[?], offset: ?>, #hiv
     %ii = memref.cast %i : memref<32xi32, strided<[2]>, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -308,15 +308,15 @@ func.func @unaligned_indices(%unknown: memref<?xi32, strided<[?], offset: ?>, #h
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -339,15 +339,15 @@ func.func @unaligned_scratch(%unknown: memref<?xi32, strided<[?], offset: ?>, #h
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -370,15 +370,15 @@ func.func @unaligned_destination(%unknown: memref<?xi32, strided<[?], offset: ?>
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -401,15 +401,15 @@ func.func @overlapping_tables(%unknown: memref<?xi32, strided<[?], offset: ?>, #
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -432,15 +432,15 @@ func.func @source_destination_alias(%unknown: memref<?xi32, strided<[?], offset:
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -463,7 +463,7 @@ func.func @conditional_gather(%unknown: memref<?xi32, strided<[?], offset: ?>, #
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
@@ -471,9 +471,9 @@ func.func @conditional_gather(%unknown: memref<?xi32, strided<[?], offset: ?>, #
       scf.if %cond {
         func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
       }
-      
+
     }
-    
+
     return
 }
 
@@ -496,15 +496,15 @@ func.func @unknown_source(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -533,9 +533,9 @@ func.func @outside_loop_read_before(%unknown: memref<?xi32, strided<[?], offset:
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -558,15 +558,15 @@ func.func @zero_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hiv
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -589,15 +589,15 @@ func.func @one_iteration(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -620,15 +620,15 @@ func.func @two_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -651,15 +651,15 @@ func.func @dynamic_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %trip step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }
 
@@ -682,15 +682,15 @@ func.func @unmodeled_scalar_effect(%unknown: memref<?xi32, strided<[?], offset: 
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    
+
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @unknown_effect() : () -> ()
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      
+
     }
-    
+
     return
 }

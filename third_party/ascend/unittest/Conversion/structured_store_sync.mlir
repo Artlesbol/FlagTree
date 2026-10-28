@@ -33,7 +33,7 @@ func.func @disjoint(%gm: memref<?xf32, strided<[?], offset: ?>, #hivm.address_sp
       %dstc0 = memref.cast %dst0 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
       func.call @store_ubuf_to_gm_1d_float(%srcd, %dstc0, %atomic) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
       hivm.hir.pipe_barrier[<PIPE_MTE3>]
-      
+
       %off1 = affine.apply affine_map<()[s0] -> (s0 + 32)>()[%base]
       %dst1 = memref.reinterpret_cast %gm to offset: [%off1], sizes: [32], strides: [1] : memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>> to memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>>
       %dstc1 = memref.cast %dst1 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
@@ -77,7 +77,7 @@ func.func @overlap(%gm: memref<?xf32, strided<[?], offset: ?>, #hivm.address_spa
       %dstc0 = memref.cast %dst0 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
       func.call @store_ubuf_to_gm_1d_float(%srcd, %dstc0, %atomic) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
       hivm.hir.pipe_barrier[<PIPE_MTE3>]
-      
+
       %off1 = affine.apply affine_map<()[s0] -> (s0 + 16)>()[%base]
       %dst1 = memref.reinterpret_cast %gm to offset: [%off1], sizes: [32], strides: [1] : memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>> to memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>>
       %dstc1 = memref.cast %dst1 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
@@ -121,7 +121,7 @@ func.func @revisit(%gm: memref<?xf32, strided<[?], offset: ?>, #hivm.address_spa
       %dstc0 = memref.cast %dst0 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
       func.call @store_ubuf_to_gm_1d_float(%srcd, %dstc0, %atomic) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
       hivm.hir.pipe_barrier[<PIPE_MTE3>]
-      
+
       %off1 = affine.apply affine_map<()[s0] -> (s0 + 32)>()[%base]
       %dst1 = memref.reinterpret_cast %gm to offset: [%off1], sizes: [32], strides: [1] : memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>> to memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>>
       %dstc1 = memref.cast %dst1 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
@@ -165,7 +165,7 @@ func.func @unknown_base(%gm: memref<?xf32, strided<[?], offset: ?>, #hivm.addres
       %dstc0 = memref.cast %dst0 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
       func.call @store_ubuf_to_gm_1d_float(%srcd, %dstc0, %atomic) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
       hivm.hir.pipe_barrier[<PIPE_MTE3>]
-      
+
       %off1 = affine.apply affine_map<()[s0] -> (s0 + 32)>()[%base]
       %dst1 = memref.reinterpret_cast %other to offset: [%off1], sizes: [32], strides: [1] : memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>> to memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>>
       %dstc1 = memref.cast %dst1 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
@@ -209,7 +209,7 @@ func.func @atomic(%gm: memref<?xf32, strided<[?], offset: ?>, #hivm.address_spac
       %dstc0 = memref.cast %dst0 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
       func.call @store_ubuf_to_gm_1d_float(%srcd, %dstc0, %atomic) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
       hivm.hir.pipe_barrier[<PIPE_MTE3>]
-      
+
       %off1 = affine.apply affine_map<()[s0] -> (s0 + 32)>()[%base]
       %dst1 = memref.reinterpret_cast %gm to offset: [%off1], sizes: [32], strides: [1] : memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>> to memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>>
       %dstc1 = memref.cast %dst1 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
@@ -253,7 +253,7 @@ func.func @dynamic_mode(%gm: memref<?xf32, strided<[?], offset: ?>, #hivm.addres
       %dstc0 = memref.cast %dst0 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
       func.call @store_ubuf_to_gm_1d_float(%srcd, %dstc0, %mode) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
       hivm.hir.pipe_barrier[<PIPE_MTE3>]
-      
+
       %off1 = affine.apply affine_map<()[s0] -> (s0 + 32)>()[%base]
       %dst1 = memref.reinterpret_cast %gm to offset: [%off1], sizes: [32], strides: [1] : memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>> to memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>>
       %dstc1 = memref.cast %dst1 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
@@ -297,7 +297,7 @@ func.func @unaligned_ub(%gm: memref<?xf32, strided<[?], offset: ?>, #hivm.addres
       %dstc0 = memref.cast %dst0 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
       func.call @store_ubuf_to_gm_1d_float(%srcd, %dstc0, %atomic) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
       hivm.hir.pipe_barrier[<PIPE_MTE3>]
-      
+
       %off1 = affine.apply affine_map<()[s0] -> (s0 + 32)>()[%base]
       %dst1 = memref.reinterpret_cast %gm to offset: [%off1], sizes: [32], strides: [1] : memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>> to memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>>
       %dstc1 = memref.cast %dst1 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
@@ -341,7 +341,7 @@ func.func @strided_gm(%gm: memref<?xf32, strided<[?], offset: ?>, #hivm.address_
       %dstc0 = memref.cast %dst0 : memref<32xf32, strided<[2], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
       func.call @store_ubuf_to_gm_1d_float(%srcd, %dstc0, %atomic) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
       hivm.hir.pipe_barrier[<PIPE_MTE3>]
-      
+
       %off1 = affine.apply affine_map<()[s0] -> (s0 + 32)>()[%base]
       %dst1 = memref.reinterpret_cast %gm to offset: [%off1], sizes: [32], strides: [2] : memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>> to memref<32xf32, strided<[2], offset: ?>, #hivm.address_space<gm>>
       %dstc1 = memref.cast %dst1 : memref<32xf32, strided<[2], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
@@ -473,7 +473,7 @@ func.func @other_pipeline(%gm: memref<?xf32, strided<[?], offset: ?>, #hivm.addr
       %dstc0 = memref.cast %dst0 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
       func.call @store_ubuf_to_gm_1d_float(%srcd, %dstc0, %atomic) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
       hivm.hir.pipe_barrier[<PIPE_V>]
-      
+
       %off1 = affine.apply affine_map<()[s0] -> (s0 + 32)>()[%base]
       %dst1 = memref.reinterpret_cast %gm to offset: [%off1], sizes: [32], strides: [1] : memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>> to memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>>
       %dstc1 = memref.cast %dst1 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
@@ -561,7 +561,7 @@ func.func @final_wait(%gm: memref<?xf32, strided<[?], offset: ?>, #hivm.address_
       %dstc0 = memref.cast %dst0 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>
       func.call @store_ubuf_to_gm_1d_float(%srcd, %dstc0, %atomic) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
       hivm.hir.pipe_barrier[<PIPE_MTE3>]
-      
+
       %off1 = affine.apply affine_map<()[s0] -> (s0 + 32)>()[%base]
       %dst1 = memref.reinterpret_cast %gm to offset: [%off1], sizes: [32], strides: [1] : memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>> to memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>>
       %dstc1 = memref.cast %dst1 : memref<32xf32, strided<[1], offset: ?>, #hivm.address_space<gm>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<gm>>

@@ -49,4 +49,4 @@ def test_address_hoist_option_is_hashed():
 @pytest.mark.parametrize('value', [0, 1, 'true', None])
 def test_address_hoist_rejects_non_boolean(value):
     with pytest.raises(ValueError, match='must be a bool'):
-        compiler.AscendOptions(structured_address_hoisting=value)
+        compiler.NPUOptions(structured_address_hoisting=value)

@@ -19,11 +19,11 @@ def test_physical_address_hoist_admission():
         compiler._get_triton_mlir_opt_path(), str(source),
         '--hoist-structured-permutation-addresses', '--allow-unregistered-dialect',
         '--verify-each'], text=True)
-    admitted = {'packed_double', 'packed_single', 'unaligned_source', 'outside_loop_read_before'}
+    admitted = {'packed_double', 'packed_single', 'unaligned_source'}
     rejected = {'index_extra_read', 'physical_alias', 'unknown_alias', 'index_write',
                 'after_loop_read', 'strided_indices', 'unaligned_indices',
                 'unaligned_scratch', 'unaligned_destination', 'overlapping_tables',
-                'source_destination_alias', 'conditional_gather', 'unknown_source', 'zero_iterations', 'one_iteration', 'two_iterations', 'unmodeled_scalar_effect'}
+                'source_destination_alias', 'conditional_gather', 'unknown_source', 'zero_iterations', 'one_iteration', 'two_iterations', 'unmodeled_scalar_effect', 'outside_loop_read_before', 'before_loop_dma_write', 'before_loop_unknown_effect'}
     for name in admitted | rejected:
         body = result.split('func.func @' + name + '(')[1].split('\n  }')[0]
         if name in admitted:

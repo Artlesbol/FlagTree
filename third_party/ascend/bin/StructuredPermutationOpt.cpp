@@ -225,8 +225,21 @@ struct HoistStructuredPermutationAddressesPass
         safe = false;
         return;
       }
-      if (top != loop.getOperation() && top->isBeforeInBlock(loop))
-        return;
+      bool beforeLoop = top != loop.getOperation() && top->isBeforeInBlock(loop);
+      // Initialization on PIPE_V is drained by prepare_addresses' leading
+      // vector barrier. Other preheader accesses must pass the same physical
+      // alias checks as loop accesses: an earlier DMA read can still be in
+      // flight when the address table is overwritten. Unknown calls can hide
+      // these asynchronous accesses behind scalar addresses.
+      if (beforeLoop)
+        if (auto init = dyn_cast<func::CallOp>(op)) {
+          StringRef name = init.getCallee();
+          if (name == "arange_1d_int32_t" ||
+              name == "broadcast_scalar_int32_t_to_1d" ||
+              name == "vand_1d_int32_t" || name == "vmuls_vs_1d_int32_t" ||
+              name == "vshrs_vs_1d_int32_t" || name == "vadd_1d_int32_t")
+            return;
+        }
       // Unknown calls/operations can hide UB accesses behind scalar addresses.
       // Only compiler-owned DMA ABIs and explicit synchronization are trusted;
       // all their memory accesses remain covered by the descriptor checks below.

@@ -166,6 +166,15 @@ struct HoistStructuredPermutationAddressesPass
         call->getBlock() != loop.getBody() || call.getNumOperands() != 4 ||
         call.getNumResults() != 0)
       return;
+    llvm::APInt lower, step, upper;
+    if (!matchPattern(loop.getLowerBound(), m_ConstantInt(&lower)) || !lower.isZero() ||
+        !matchPattern(loop.getStep(), m_ConstantInt(&step)) || step.getSExtValue() <= 0 ||
+        step.getSExtValue() > std::numeric_limits<int32_t>::max() / 2)
+      return;
+    int64_t threshold = 2 * step.getSExtValue();
+    bool dynamicTrips = !matchPattern(loop.getUpperBound(), m_ConstantInt(&upper));
+    if (!dynamicTrips && upper.getSExtValue() <= threshold)
+      return;
     auto source = resolvePermuteSource(call.getOperand(0));
     auto indices = resolvePermuteBuffer(call.getOperand(1));
     auto destination = resolvePermuteBuffer(call.getOperand(2));
@@ -270,13 +279,32 @@ struct HoistStructuredPermutationAddressesPass
     SmallVector<Value> args{tableA, tableB};
     for (int64_t v : {source->first.bytes, source->first.address, source->second.address})
       args.push_back(builder.create<arith::ConstantIntOp>(loc, v, 32));
-    builder.create<func::CallOp>(loc, prepare, TypeRange{}, args);
+    Value reuse;
+    if (dynamicTrips) {
+      Value limit = builder.create<arith::ConstantOp>(
+          loc, builder.getIntegerAttr(loop.getStep().getType(), threshold));
+      reuse = builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::sgt,
+                                           loop.getUpperBound(), limit);
+      auto guard = builder.create<scf::IfOp>(loc, reuse, false);
+      auto inside = guard.getThenBodyBuilder();
+      inside.create<func::CallOp>(loc, prepare, TypeRange{}, args);
+    } else {
+      builder.create<func::CallOp>(loc, prepare, TypeRange{}, args);
+    }
     builder.setInsertionPoint(call);
     Value chosen = tableA;
     if (source->condition)
       chosen = builder.create<arith::SelectOp>(loc, source->condition, tableA, tableB);
     declare(name, {tableType, call.getOperand(2).getType()});
-    builder.create<func::CallOp>(loc, name, TypeRange{}, ValueRange{chosen, call.getOperand(2)});
+    if (reuse) {
+      auto guard = builder.create<scf::IfOp>(loc, reuse, true);
+      auto fast = guard.getThenBodyBuilder();
+      fast.create<func::CallOp>(loc, name, TypeRange{}, ValueRange{chosen, call.getOperand(2)});
+      auto slow = guard.getElseBodyBuilder();
+      slow.clone(*call);
+    } else {
+      builder.create<func::CallOp>(loc, name, TypeRange{}, ValueRange{chosen, call.getOperand(2)});
+    }
     call.erase();
   }
 };
@@ -440,7 +468,7 @@ struct CoalesceStructuredStoreSyncPass
           // A read/write, another pipeline synchronization, control flow, or an
           // unknown operation ends the group. Keep the final wait and every
           // cross-pipeline dependency exactly as CANN scheduled them.
-          if (!isMemoryEffectFree(&op) && !isa<hivm::PointerCastOp>(&op)) {
+          if (op.getNumRegions() || (!isMemoryEffectFree(&op) && !isa<hivm::PointerCastOp>(&op))) {
             group.clear();
             pending.clear();
           }

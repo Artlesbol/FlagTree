@@ -23,7 +23,7 @@ def test_physical_address_hoist_admission():
     rejected = {'index_extra_read', 'physical_alias', 'unknown_alias', 'index_write',
                 'after_loop_read', 'strided_indices', 'unaligned_indices',
                 'unaligned_scratch', 'unaligned_destination', 'overlapping_tables',
-                'source_destination_alias', 'conditional_gather', 'unknown_source', 'zero_iterations', 'one_iteration', 'two_iterations'}
+                'source_destination_alias', 'conditional_gather', 'unknown_source', 'zero_iterations', 'one_iteration', 'two_iterations', 'unmodeled_scalar_effect'}
     for name in admitted | rejected:
         body = result.split('func.func @' + name + '(')[1].split('\n  }')[0]
         if name in admitted:

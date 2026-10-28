@@ -5,9 +5,11 @@ func.func private @custom_flagtree_stride_gather_float(memref<?xf32, strided<[?]
 
 func.func private @consume(memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>)
 
+func.func private @store_ubuf_to_gm_1d_int32_t(memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32)
+func.func private @unknown_effect()
 func.func private @mutate(memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>)
 
-func.func @packed_double(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @packed_double(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -16,6 +18,7 @@ func.func @packed_double(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -37,7 +40,7 @@ func.func @packed_double(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     return
 }
 
-func.func @packed_single(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @packed_single(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -46,6 +49,7 @@ func.func @packed_single(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -66,7 +70,7 @@ func.func @packed_single(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     return
 }
 
-func.func @unaligned_source(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @unaligned_source(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -75,6 +79,7 @@ func.func @unaligned_source(%unknown: memref<?xi32, strided<[?], offset: ?>, #hi
     %cd = arith.constant 256 : i64
     %cs = arith.constant 388 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -96,7 +101,7 @@ func.func @unaligned_source(%unknown: memref<?xi32, strided<[?], offset: ?>, #hi
     return
 }
 
-func.func @index_extra_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @index_extra_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -105,6 +110,7 @@ func.func @index_extra_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hi
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -120,13 +126,13 @@ func.func @index_extra_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hi
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      func.call @consume(%ii) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
+      func.call @store_ubuf_to_gm_1d_int32_t(%ii, %gm, %atomic0) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
     }
     
     return
 }
 
-func.func @physical_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @physical_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -135,6 +141,7 @@ func.func @physical_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -152,13 +159,13 @@ func.func @physical_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
       %alias = hivm.hir.pointer_cast(%ca) : memref<32xi32, #hivm.address_space<ub>>
       %alias_d = memref.cast %alias : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-      func.call @consume(%alias_d) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
+      func.call @store_ubuf_to_gm_1d_int32_t(%alias_d, %gm, %atomic0) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
     }
     
     return
 }
 
-func.func @unknown_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @unknown_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -167,6 +174,7 @@ func.func @unknown_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -182,13 +190,13 @@ func.func @unknown_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
-      func.call @consume(%unknown) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
+      func.call @store_ubuf_to_gm_1d_int32_t(%unknown, %gm, %atomic0) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
     }
     
     return
 }
 
-func.func @index_write(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @index_write(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -197,6 +205,7 @@ func.func @index_write(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.ad
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -218,7 +227,7 @@ func.func @index_write(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.ad
     return
 }
 
-func.func @after_loop_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @after_loop_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -227,6 +236,7 @@ func.func @after_loop_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hiv
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -244,11 +254,11 @@ func.func @after_loop_read(%unknown: memref<?xi32, strided<[?], offset: ?>, #hiv
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
       
     }
-    func.call @consume(%ii) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
+    func.call @store_ubuf_to_gm_1d_int32_t(%ii, %gm, %atomic0) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
     return
 }
 
-func.func @strided_indices(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @strided_indices(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -257,6 +267,7 @@ func.func @strided_indices(%unknown: memref<?xi32, strided<[?], offset: ?>, #hiv
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, strided<[2]>, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -278,7 +289,7 @@ func.func @strided_indices(%unknown: memref<?xi32, strided<[?], offset: ?>, #hiv
     return
 }
 
-func.func @unaligned_indices(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @unaligned_indices(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -287,6 +298,7 @@ func.func @unaligned_indices(%unknown: memref<?xi32, strided<[?], offset: ?>, #h
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -308,7 +320,7 @@ func.func @unaligned_indices(%unknown: memref<?xi32, strided<[?], offset: ?>, #h
     return
 }
 
-func.func @unaligned_scratch(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @unaligned_scratch(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -317,6 +329,7 @@ func.func @unaligned_scratch(%unknown: memref<?xi32, strided<[?], offset: ?>, #h
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -338,7 +351,7 @@ func.func @unaligned_scratch(%unknown: memref<?xi32, strided<[?], offset: ?>, #h
     return
 }
 
-func.func @unaligned_destination(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @unaligned_destination(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -347,6 +360,7 @@ func.func @unaligned_destination(%unknown: memref<?xi32, strided<[?], offset: ?>
     %cd = arith.constant 260 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -368,7 +382,7 @@ func.func @unaligned_destination(%unknown: memref<?xi32, strided<[?], offset: ?>
     return
 }
 
-func.func @overlapping_tables(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @overlapping_tables(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -377,6 +391,7 @@ func.func @overlapping_tables(%unknown: memref<?xi32, strided<[?], offset: ?>, #
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -398,7 +413,7 @@ func.func @overlapping_tables(%unknown: memref<?xi32, strided<[?], offset: ?>, #
     return
 }
 
-func.func @source_destination_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @source_destination_alias(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -407,6 +422,7 @@ func.func @source_destination_alias(%unknown: memref<?xi32, strided<[?], offset:
     %cd = arith.constant 256 : i64
     %cs = arith.constant 256 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -428,7 +444,7 @@ func.func @source_destination_alias(%unknown: memref<?xi32, strided<[?], offset:
     return
 }
 
-func.func @conditional_gather(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @conditional_gather(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -437,6 +453,7 @@ func.func @conditional_gather(%unknown: memref<?xi32, strided<[?], offset: ?>, #
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -460,7 +477,7 @@ func.func @conditional_gather(%unknown: memref<?xi32, strided<[?], offset: ?>, #
     return
 }
 
-func.func @unknown_source(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @unknown_source(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -469,6 +486,7 @@ func.func @unknown_source(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -490,7 +508,7 @@ func.func @unknown_source(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm
     return
 }
 
-func.func @outside_loop_read_before(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @outside_loop_read_before(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -499,6 +517,7 @@ func.func @outside_loop_read_before(%unknown: memref<?xi32, strided<[?], offset:
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -508,7 +527,7 @@ func.func @outside_loop_read_before(%unknown: memref<?xi32, strided<[?], offset:
     %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
     %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
-    func.call @consume(%ii) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
+    func.call @store_ubuf_to_gm_1d_int32_t(%ii, %gm, %atomic0) : (memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, i32) -> ()
     scf.for %iv = %c0 to %c4 step %c1 {
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
@@ -520,7 +539,7 @@ func.func @outside_loop_read_before(%unknown: memref<?xi32, strided<[?], offset:
     return
 }
 
-func.func @zero_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @zero_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 0 : index
@@ -529,6 +548,7 @@ func.func @zero_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hiv
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -550,7 +570,7 @@ func.func @zero_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hiv
     return
 }
 
-func.func @one_iteration(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @one_iteration(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 1 : index
@@ -559,6 +579,7 @@ func.func @one_iteration(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -580,7 +601,7 @@ func.func @one_iteration(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.
     return
 }
 
-func.func @two_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64) {
+func.func @two_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 2 : index
@@ -589,6 +610,7 @@ func.func @two_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -610,7 +632,7 @@ func.func @two_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm
     return
 }
 
-func.func @dynamic_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %trip: index) {
+func.func @dynamic_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>, %trip: index) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
@@ -619,6 +641,7 @@ func.func @dynamic_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #
     %cd = arith.constant 256 : i64
     %cs = arith.constant 384 : i64
     %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
     %ca = arith.constant 64 : i64
     %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
     %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
@@ -633,6 +656,38 @@ func.func @dynamic_iterations(%unknown: memref<?xi32, strided<[?], offset: ?>, #
       %cond = arith.cmpi eq, %iv, %c0 : index
       %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
       %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
+      func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
+      
+    }
+    
+    return
+}
+
+func.func @unmodeled_scalar_effect(%unknown: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, %dynamic: i64, %gm: memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<gm>>) {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c4 = arith.constant 4 : index
+    %ci = arith.constant 0 : i64
+    %ct = arith.constant 128 : i64
+    %cd = arith.constant 256 : i64
+    %cs = arith.constant 384 : i64
+    %cb = arith.constant 512 : i64
+    %atomic0 = arith.constant 0 : i32
+    %ca = arith.constant 64 : i64
+    %i = hivm.hir.pointer_cast(%ci) : memref<32xi32, #hivm.address_space<ub>>
+    %t = hivm.hir.pointer_cast(%ct) : memref<32xi32, #hivm.address_space<ub>>
+    %d = hivm.hir.pointer_cast(%cd) : memref<32xf32, #hivm.address_space<ub>>
+    %sa = hivm.hir.pointer_cast(%cs) : memref<32xf32, #hivm.address_space<ub>>
+    %sb = hivm.hir.pointer_cast(%cb) : memref<32xf32, #hivm.address_space<ub>>
+    %ii = memref.cast %i : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
+    %tt = memref.cast %t : memref<32xi32, #hivm.address_space<ub>> to memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>
+    %dd = memref.cast %d : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
+    
+    scf.for %iv = %c0 to %c4 step %c1 {
+      %cond = arith.cmpi eq, %iv, %c0 : index
+      %selected = arith.select %cond, %sa, %sb : memref<32xf32, #hivm.address_space<ub>>
+      %ss = memref.cast %selected : memref<32xf32, #hivm.address_space<ub>> to memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>
+      func.call @unknown_effect() : () -> ()
       func.call @custom_flagtree_stride_gather_float(%ss, %ii, %dd, %tt) : (memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xf32, strided<[?], offset: ?>, #hivm.address_space<ub>>, memref<?xi32, strided<[?], offset: ?>, #hivm.address_space<ub>>) -> ()
       
     }

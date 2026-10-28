@@ -8,7 +8,7 @@ from pathlib import Path
 import statistics
 
 import torch
-import torch_npu
+import torch_npu  # noqa: F401 -- registers the NPU backend
 import triton
 import triton.language as tl
 
@@ -48,6 +48,8 @@ def main():
     parser.add_argument('--library', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    if os.environ.get('TRITON_ALL_BLOCKS_PARALLEL') != '1':
+        parser.error('TRITON_ALL_BLOCKS_PARALLEL=1 is required for the paired 40-block comparison')
     torch.npu.set_device(0)
     transpose = args.scene == 'transpose'
     programs = 56 if transpose else 256

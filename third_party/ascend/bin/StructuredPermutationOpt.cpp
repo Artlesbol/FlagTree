@@ -552,11 +552,165 @@ struct CoalesceStructuredStoreSyncPass
   }
 };
 
+// Resolve the start of a *planned* UB view without assuming it is packed.
+// Dynamic offsets and non-view producers are deliberately not inferred.
+static std::optional<int64_t> plannedUbStart(mlir::Value value) {
+  using namespace mlir;
+  if (auto cast = value.getDefiningOp<memref::CastOp>())
+    return plannedUbStart(cast.getSource());
+  auto type = dyn_cast<MemRefType>(value.getType());
+  SmallVector<int64_t> strides;
+  int64_t offset;
+  if (!type || !type.getElementType().isIntOrFloat() ||
+      failed(getPermuteStrides(type, strides, offset)) ||
+      ShapedType::isDynamic(offset) || offset < 0)
+    return std::nullopt;
+  int64_t bytes = type.getElementTypeBitWidth() / 8;
+  auto *op = value.getDefiningOp();
+  if (!op || (bytes != 2 && bytes != 4))
+    return std::nullopt;
+  if (op->getName().getStringRef() == "hivm.hir.pointer_cast" &&
+      op->getNumOperands() == 1) {
+    llvm::APInt address;
+    if (matchPattern(op->getOperand(0), m_ConstantInt(&address)) &&
+        address.getSExtValue() >= 0 &&
+        address.getSExtValue() <= std::numeric_limits<int32_t>::max() &&
+        offset <=
+            (std::numeric_limits<int32_t>::max() - address.getSExtValue()) /
+                bytes)
+      return address.getSExtValue() + offset * bytes;
+    return std::nullopt;
+  }
+  if (!isa<memref::SubViewOp, memref::CollapseShapeOp, memref::ExpandShapeOp>(
+          op))
+    return std::nullopt;
+  auto source = op->getOperand(0);
+  auto sourceType = dyn_cast<MemRefType>(source.getType());
+  SmallVector<int64_t> sourceStrides;
+  int64_t sourceOffset;
+  auto start = plannedUbStart(source);
+  if (!start || !sourceType ||
+      failed(getPermuteStrides(sourceType, sourceStrides, sourceOffset)) ||
+      ShapedType::isDynamic(sourceOffset) || sourceOffset < 0 ||
+      offset < sourceOffset ||
+      offset - sourceOffset >
+          (std::numeric_limits<int32_t>::max() - *start) / bytes)
+    return std::nullopt;
+  return *start + (offset - sourceOffset) * bytes;
+}
+
+struct VectorizeStructuredUbCopiesPass
+    : mlir::PassWrapper<VectorizeStructuredUbCopiesPass,
+                        mlir::OperationPass<mlir::ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(VectorizeStructuredUbCopiesPass)
+  llvm::StringRef getArgument() const final {
+    return "vectorize-structured-ub-copies";
+  }
+  llvm::StringRef getDescription() const final {
+    return "Vectorize proven aligned-row to packed UB compactions";
+  }
+  void runOnOperation() final {
+    using namespace mlir;
+    auto module = getOperation();
+    SmallVector<func::CallOp> calls;
+    module.walk([&](func::CallOp call) { calls.push_back(call); });
+    for (auto call : calls) {
+      StringRef suffix;
+      StringRef name = call.getCallee();
+      if (!name.consume_front("copy_ubuf_to_ubuf_2d_") ||
+          call.getNumOperands() != 4 || call.getNumResults())
+        continue;
+      if (name == "half" || name == "float")
+        suffix = name;
+      else if (name == "bfloat16_t")
+        suffix = "bf16";
+      else if (name == "int16_t")
+        suffix = "int16";
+      else if (name == "int32_t")
+        suffix = "int32";
+      else
+        continue;
+      llvm::APInt mode;
+      if (!matchPattern(call.getOperand(2), m_ConstantInt(&mode)) ||
+          !mode.isZero())
+        continue;
+      auto strip = [](Value value) {
+        while (auto cast = value.getDefiningOp<memref::CastOp>())
+          value = cast.getSource();
+        return value;
+      };
+      Value source = strip(call.getOperand(0)),
+            dest = strip(call.getOperand(1));
+      auto src = dyn_cast<MemRefType>(source.getType());
+      auto dst = dyn_cast<MemRefType>(dest.getType());
+      auto ub =
+          hivm::AddressSpaceAttr::get(&getContext(), hivm::AddressSpace::UB);
+      SmallVector<int64_t> ss, ds;
+      int64_t so, d;
+      if (!src || !dst || src.getRank() != 2 || dst.getRank() != 2 ||
+          !src.hasStaticShape() || src.getShape() != dst.getShape() ||
+          src.getMemorySpace() != ub || dst.getMemorySpace() != ub ||
+          src.getElementType() != dst.getElementType() ||
+          failed(getPermuteStrides(src, ss, so)) ||
+          failed(getPermuteStrides(dst, ds, d)) || ss[1] != 1 || ds[1] != 1)
+        continue;
+      auto elem = src.getElementType();
+      Type expected;
+      if (suffix == "float")
+        expected = Float32Type::get(&getContext());
+      else if (suffix == "half")
+        expected = Float16Type::get(&getContext());
+      else if (suffix == "bf16")
+        expected = BFloat16Type::get(&getContext());
+      else
+        expected = IntegerType::get(&getContext(), suffix == "int16" ? 16 : 32);
+      if (elem != expected)
+        continue;
+      int64_t bytes = src.getElementTypeBitWidth() / 8, block = 32 / bytes;
+      int64_t rows = src.getDimSize(0), cols = src.getDimSize(1);
+      auto a = plannedUbStart(source), b = plannedUbStart(dest);
+      if (rows <= 1 || cols <= 0 || cols >= block || ds[0] != cols ||
+          ShapedType::isDynamic(ss[0]) || ss[0] < block || ss[0] % block ||
+          ss[0] / block > 255 || !a || !b || *a % 32 || *b % 32 ||
+          rows > std::numeric_limits<int32_t>::max() / (ss[0] * bytes))
+        continue;
+      int64_t readEnd = *a + ((rows - 1) * ss[0] + cols) * bytes;
+      int64_t writeEnd = *b + rows * cols * bytes;
+      if (*a < writeEnd && *b < readEnd)
+        continue;
+      std::string symbol = ("custom_flagtree_compact_2d_" + suffix).str();
+      SmallVector<Type> types{call.getOperand(0).getType(),
+                              call.getOperand(1).getType()};
+      auto signature = FunctionType::get(&getContext(), types, {});
+      auto old = module.lookupSymbol(symbol);
+      auto fn = dyn_cast_or_null<func::FuncOp>(old);
+      if (old && (!fn || fn.getFunctionType() != signature))
+        continue;
+      OpBuilder builder(call);
+      if (!fn) {
+        OpBuilder decl(module.getBodyRegion());
+        fn = decl.create<func::FuncOp>(call.getLoc(), symbol, signature);
+        fn.setPrivate();
+        fn->setAttr("hacc.always_inline", builder.getUnitAttr());
+        fn->setAttr("llvm.emit_c_interface", builder.getUnitAttr());
+        if (auto original = module.lookupSymbol<func::FuncOp>(call.getCallee()))
+          if (auto kind = original->getAttr("hivm.func_core_type"))
+            fn->setAttr("hivm.func_core_type", kind);
+      }
+      builder.create<func::CallOp>(
+          call.getLoc(), symbol, TypeRange{},
+          ValueRange{call.getOperand(0), call.getOperand(1)});
+      call.erase();
+    }
+  }
+};
+
 } // namespace
 
 namespace mlir::triton::ascend {
 void registerStructuredPermutationPasses() {
   mlir::PassRegistration<HoistStructuredPermutationAddressesPass>();
   mlir::PassRegistration<CoalesceStructuredStoreSyncPass>();
+  mlir::PassRegistration<VectorizeStructuredUbCopiesPass>();
 }
 } // namespace mlir::triton::ascend

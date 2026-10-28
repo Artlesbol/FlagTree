@@ -3,7 +3,7 @@ import hashlib
 
 import pytest
 import torch
-import torch_npu
+import torch_npu  # noqa: F401 -- registers the NPU backend
 import triton
 import triton.language as tl
 

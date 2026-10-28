@@ -248,3 +248,71 @@ Additional regressions are `test_structured_address_hoist.py` (host admission,
 cache options and dependency rejection) and `test_structured_store_values.py`
 (device guards, GM offsets and short/long loop paths). Run both alongside the
 full list above in each dispatch mode.
+
+
+## Matrix transport: unchanged short axes and sub-block GM stores
+
+These regressions do not depend on FFT. Run `test_short_axis_transpose.py` and
+`test_short_row_store.py` in **separate Python/pytest processes**: a vector-core
+exception invalidates the current process's NPU context. Repeat with
+`TRITON_ALL_BLOCKS_PARALLEL=0` and `1`. The store suite compares parallel and
+serial launches of the **same binary**, exercises contiguous and boundary-checked
+block-pointer stores, and checks input/output guards and masked rows/columns.
+The transpose suite includes the original masked `[16,4,2] -> [4,16,2]` graph,
+with and without split/join, plus 3–5D static permutations and five storage types.
+
+```bash
+ut="$src/third_party/ascend/unittest/pytest_ut"
+python -m pytest -q "$ut/test_short_axis_transpose.py"
+python -m pytest -q "$ut/test_short_row_store.py"
+```
+
+FLIR admits packed permutations retaining a short last axis under the existing
+910B, static unencoded power-of-two shape and 4096-element index-budget checks.
+A separate short-row store lowering handles rank-two FP16/BF16/FP32/I16/I32
+values with a statically bounded row shorter than 32 bytes and contiguous inner
+GM stride. Its two UB workspaces are planned before allocation, bounded by
+8 KiB together. Aligned or fully contiguous physical sources use direct DMA;
+compact/misaligned sources use unsigned vector address generation, `vgather`
+repacking and byte-counted DMA. Internal DMA is complete before returning to
+PIPE_V. This path uses no scalar GM writes, changes no installed SDK files,
+and neither serializes programs nor specializes on an application/FFT size.
+Other shapes, storage types and architectures retain their existing lowering.
+
+`short_row_store.mlir` checks compiler admission/fallback. The physical ABI
+suite additionally calls the packaged store primitive on controlled UB row and
+column strides, zero/one/chunk-boundary row counts, aligned/unaligned source
+starts and concurrent adjacent GM destinations. Rebuild the ABI harness when
+the bitcode changes. The low-bit extraction must use **unsigned** vector shifts;
+signed shifts can create negative padding addresses even when numerical output
+checks do not observe those lanes.
+
+The independent `matrix_transport_aiv` reference keeps aligned UB rows through
+load/add/store and uses a vector gather for the short-axis transpose. It is a
+comparison implementation, not a hardware-peak claim. Its transpose index-table
+HBM load is timed. The benchmark uses the original shapes, exact outputs and GM
+guards, with the dynamic program-base input removed from timing variants. All
+three policies share the same buffers/stream; use an unshared device and retain
+occupancy samples. Results are **microseconds per whole matrix kernel**, not
+FFT transform times.
+
+```bash
+TRITON_ALL_BLOCKS_PARALLEL=1 python "$bench/bench_matrix_transport.py" \
+  --scene store --library "$out/aiv-build/libpermute_reference.so" \
+  --output "$out/matrix-store.json"
+TRITON_ALL_BLOCKS_PARALLEL=1 python "$bench/bench_matrix_transport.py" \
+  --scene transpose --library "$out/aiv-build/libpermute_reference.so" \
+  --output "$out/matrix-transpose.json"
+```
+
+The protocol is 10 warmups, 5 rotated rounds of 100 graphs, 64 launches per graph.
+Each policy verifies exact outputs/guards before capture, after replay into
+cleared outputs, and after every timing round. Run `bench_paired.py` as well to
+check the previous structured-permutation performance baseline.
+
+The late `vectorize-structured-ub-copies` pass also recognizes native padded-row
+to packed-row UB copies inside these kernels. It changes only a proven
+nonoverlapping, aligned rank-two copy with unit inner strides, no padding mode,
+matching static shapes/types and bounded hardware repeat stride. A packed
+`vreducev2` replaces its scalar compaction without allocating more UB. Other
+copies retain the original callee and all surrounding synchronization.

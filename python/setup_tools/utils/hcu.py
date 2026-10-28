@@ -200,14 +200,6 @@ class HCUFlagCXRegistrar(FlagCXRegistrar):
             return {"wrapper": wrapper, "include": self.src_lib_dir.parent / "include"}
         return {"wrapper": whl_path / "api.py", "include": whl_path / "include"}
 
-    def _get_required_dst_files_paths(self):
-        return {
-            "wrapper":
-            (Path(self.flagtree_dir) / "python" / "triton" / "experimental" / "tle" / "language" / "flagcx_wrapper.py",
-             Path(self.flagtree_dir) / "third_party" / self.backend_name / "backend" / "flagcx_wrapper.py"), "include":
-            (Path(self.flagtree_dir) / "python" / "triton" / "experimental" / "tle" / "language" / "include", )
-        }
-
     def _copy_required_files(self):
         src_paths = self._get_required_src_files_paths()
         dst_paths = self._get_required_dst_files_paths()

@@ -904,6 +904,14 @@ download_flagtree_third_party("flagcx", condition=not flagcx_wheel
                               and (flagtree_backend or "nvidia") in FLAGCX_SUPPORT_BACKENDS, hook="handle_flagcx",
                               required=True)
 
+if (flagcx_wheel and (flagtree_backend or "nvidia") in FLAGCX_SUPPORT_BACKENDS
+        and enable_flagtree_third_party("flagcx")):
+    # Preinstalled packages supply the libraries directly, but clean checkouts
+    # still need the generated Python wrappers and consumer headers installed.
+    utils.default.FlagCXRegistrar({
+        "configs": configs, "backend": utils.flagtree_submodules["flagcx"], "cache": cache
+    }).run()
+
 download_flagtree_third_party("cuda-tile", condition=(flagtree_backend == "tileir"), required=True)
 
 handle_flagtree_backend()

@@ -51,6 +51,15 @@ def _canonical_memref(typ, rank=1, space='ub'):
     return f'memref<{shape}, strided<[{strides}], offset: ?>, #hivm.address_space<{space}>>'
 
 
+def _check_store_workspace(typ, block_elements):
+    fields = split_fields(typ[7:-1])
+    shape = re.fullmatch(r'(\d+)xi32', fields[0])
+    layout = re.fullmatch(r'strided<\[1\](?:, offset: (\d+))?>', fields[1]) if len(fields) == 3 else None
+    if (not shape or not 0 < int(shape[1]) <= 1024 or int(shape[1]) % block_elements
+            or (len(fields) == 3 and (not layout or int(layout[1] or 0) % 8))):
+        raise ValueError('Short-row store requires aligned, packed, bounded i32 workspaces')
+
+
 def lower_private_ops(text):
     """Expand strictly recognized private operations; reject malformed ABI input."""
     prefix = 'flagtree_abi_'
@@ -85,6 +94,10 @@ def lower_private_ops(text):
             ]
             elem = dict(half='f16', bf16='bf16', float='f32', int16='i16', int32='i32')[name.rsplit('_', 1)[1]]
             expected = [elem, elem, 'i32', 'i32']
+            for typ in types[2:]:
+                _check_store_workspace(typ, 8 if elem in ('f32', 'i32') else 16)
+            if types[2] != types[3]:
+                raise ValueError('Short-row store workspace capacities and layouts must agree')
         else:
             canonical = [_canonical_memref(t) for t in types]
         if cast:

@@ -96,3 +96,32 @@ def test_parallel_serial_same_binary(late, join):
 ])
 def test_parallel_short_rows_and_guards(dtype, cols, programs, tail, offset, row_padding):
     _check_store(dtype, 32, cols, programs, tail, offset, row_padding, True, True, False)
+
+
+@triton.jit
+def _block_store(X, Y, STRIDE: tl.constexpr):
+    base = tl.program_id(0) * 4
+    src = tl.make_block_ptr(X, shape=(29, 163), strides=(STRIDE, 1), offsets=(0, base), block_shape=(32, 4),
+                            order=(1, 0))
+    raw = tl.load(src, boundary_check=(0, 1), padding_option='zero')
+    a, b = tl.split(tl.reshape(raw, (64, 2)))
+    value = tl.reshape(tl.join(a + 1, b + 1), (32, 4))
+    dst = tl.make_block_ptr(Y, shape=(29, 163), strides=(STRIDE, 1), offsets=(0, base), block_shape=(32, 4),
+                            order=(1, 0))
+    tl.store(dst, value, boundary_check=(0, 1))
+
+
+@pytest.mark.parametrize('dtype', [torch.float16, torch.bfloat16, torch.float32])
+def test_boundary_checked_short_row_store(dtype):
+    stride, start = 176, 39
+    cpu = torch.arange(29 * stride, dtype=torch.int32).remainder(97).to(dtype).reshape(29, stride)
+    source = cpu.flatten().npu()
+    storage = torch.full((start + cpu.numel() + 32, ), -111, dtype=dtype, device='npu')
+    output = storage[start:start + cpu.numel()]
+    _block_store[(41, )](source, output, stride, num_warps=8, num_stages=1, multibuffer=False)
+    torch.npu.synchronize()
+    expected = torch.full_like(cpu, -111)
+    expected[:, :163] = cpu[:, :163] + 1
+    actual = storage.cpu()
+    assert torch.equal(actual[start:start + cpu.numel()].reshape_as(expected), expected)
+    assert torch.all(actual[:start] == -111) and torch.all(actual[start + cpu.numel():] == -111)

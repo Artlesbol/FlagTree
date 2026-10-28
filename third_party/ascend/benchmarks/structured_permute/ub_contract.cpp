@@ -129,6 +129,77 @@ __aicore__ inline void cast_contract(GM_ADDR x, GM_ADDR a,
   pipe_barrier(PIPE_ALL);
 }
 
+// Rank-two stores use controlled physical UB strides and genuinely concurrent
+// programs writing adjacent GM columns. Each call uses the packaged primitive.
+template <typename T> struct ContractMatrix {
+  T *allocated, *aligned;
+  int64_t offset, sizes[2], strides[2];
+};
+#define DECLARE_SHORT_STORE(SUFFIX, T)                                         \
+  extern "C" __aicore__ void                                                   \
+      _mlir_ciface_custom_flagtree_short_row_store_##SUFFIX(                   \
+          ContractMatrix<__ubuf__ T> *, ContractMatrix<__gm__ T> *,            \
+          ContractMemref<__ubuf__ int32_t> *,                                  \
+          ContractMemref<__ubuf__ int32_t> *);
+DECLARE_SHORT_STORE(int16, int16_t)
+DECLARE_SHORT_STORE(int32, int32_t)
+
+constexpr uint32_t STORE_INPUT = 16384, STORE_WORK = 1056;
+template <typename T>
+__aicore__ inline void short_row_contract(GM_ADDR x, GM_ADDR y, GM_ADDR debug,
+                                          GlobalTensor<uint32_t> config) {
+  TPipe pipe;
+  TBuf<TPosition::VECCALC> inputBuffer, addressBuffer, workBuffer;
+  pipe.InitBuffer(inputBuffer, STORE_INPUT * sizeof(T));
+  pipe.InitBuffer(addressBuffer, STORE_WORK * sizeof(int32_t));
+  pipe.InitBuffer(workBuffer, STORE_WORK * sizeof(int32_t));
+  auto input = inputBuffer.Get<T>();
+  auto addresses = addressBuffer.Get<int32_t>(),
+       work = workBuffer.Get<int32_t>();
+  GlobalTensor<T> gx;
+  GlobalTensor<int32_t> gd;
+  gx.SetGlobalBuffer(reinterpret_cast<__gm__ T *>(x));
+  gd.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t *>(debug));
+  uint32_t rows = config.GetValue(0), cols = config.GetValue(1);
+  uint32_t srcStride = config.GetValue(2), srcColStride = config.GetValue(3);
+  uint32_t srcOffset = config.GetValue(4), dstStride = config.GetValue(5);
+  uint32_t dstOffset = config.GetValue(6), programs = config.GetValue(7);
+  uint32_t tail = config.GetValue(8), addressOffset = config.GetValue(9);
+  uint32_t workOffset = config.GetValue(10);
+  for (uint32_t program = GetBlockIdx(); program < programs;
+       program += GetBlockNum()) {
+    DataCopy(input, gx[program * STORE_INPUT], STORE_INPUT);
+    Duplicate(addresses, int32_t(-177), STORE_WORK);
+    Duplicate(work, int32_t(-177), STORE_WORK);
+    pipe_barrier(PIPE_ALL);
+    auto in = reinterpret_cast<__ubuf__ T *>(input.GetPhyAddr());
+    auto out = reinterpret_cast<__gm__ T *>(y);
+    uint32_t validCols = cols - (program + 1 == programs ? tail : 0);
+    ContractMatrix<__ubuf__ T> source{in,
+                                      in,
+                                      int64_t(srcOffset),
+                                      {rows, validCols},
+                                      {srcStride, srcColStride}};
+    ContractMatrix<__gm__ T> dest{out,
+                                  out,
+                                  int64_t(dstOffset + program * cols),
+                                  {rows, validCols},
+                                  {dstStride, 1}};
+    auto a = descriptor(addresses, 1024, 1, addressOffset);
+    auto w = descriptor(work, 1024, 1, workOffset);
+    if constexpr (sizeof(T) == 2)
+      _mlir_ciface_custom_flagtree_short_row_store_int16(&source, &dest, &a,
+                                                         &w);
+    else
+      _mlir_ciface_custom_flagtree_short_row_store_int32(&source, &dest, &a,
+                                                         &w);
+    pipe_barrier(PIPE_ALL);
+    DataCopy(gd[program * 2 * STORE_WORK], addresses, STORE_WORK);
+    DataCopy(gd[program * 2 * STORE_WORK + STORE_WORK], work, STORE_WORK);
+    pipe_barrier(PIPE_ALL);
+  }
+}
+
 extern "C" __global__ __aicore__ void
 ub_contract_aiv(GM_ADDR x, GM_ADDR indices, GM_ADDR a, GM_ADDR b, GM_ADDR cfg,
                 uint32_t mode, uint32_t wordBytes) {
@@ -136,7 +207,12 @@ ub_contract_aiv(GM_ADDR x, GM_ADDR indices, GM_ADDR a, GM_ADDR b, GM_ADDR cfg,
 #if !defined(__DAV_C220_CUBE__)
   GlobalTensor<uint32_t> config;
   config.SetGlobalBuffer(reinterpret_cast<__gm__ uint32_t *>(cfg));
-  if (mode == 2)
+  if (mode == 4) {
+    if (wordBytes == 2)
+      short_row_contract<int16_t>(x, a, b, config);
+    else
+      short_row_contract<int32_t>(x, a, b, config);
+  } else if (mode == 2)
     cast_contract<true>(x, a, config);
   else if (mode == 3)
     cast_contract<false>(x, a, config);

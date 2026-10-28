@@ -156,8 +156,8 @@ short_row_store(memref_t<__ubuf__ T, 2> *src, memref_t<__gm__ T, 2> *dst,
   const int64_t srcStride = src->strides[0], dstStride = dst->strides[0];
   // The operation is scheduled as PIPE_V. Internal MTE3 work is drained before
   // returning, so subsequent users and UB reuse observe the completed store.
-  if (isAddress32ByteAligned(in) &&
-      ((srcStride * sizeof(T)) % 32 == 0 ||
+  if (src->strides[1] == 1 && isAddress32ByteAligned(in) &&
+      ((srcStride >= blockElements && (srcStride * sizeof(T)) % 32 == 0) ||
        (srcStride == cols && dstStride == cols))) {
     INTRINSIC(set_flag, PIPE_V, PIPE_MTE3, LIB_EVENT_ID0);
     INTRINSIC(wait_flag, PIPE_V, PIPE_MTE3, LIB_EVENT_ID0);
@@ -199,7 +199,8 @@ short_row_store(memref_t<__ubuf__ T, 2> *src, memref_t<__gm__ T, 2> *dst,
   INTRINSIC(pipe_barrier, PIPE_V);
   vector_eltwise_vs_1d<VectorOpTy::VMINS>(&addr, int32_t(cols - 1), &addr);
   INTRINSIC(pipe_barrier, PIPE_V);
-  vector_eltwise_vs_1d<VectorOpTy::VMULS>(&addr, int32_t(sizeof(T)), &addr);
+  vector_eltwise_vs_1d<VectorOpTy::VMULS>(
+      &addr, int32_t(src->strides[1] * sizeof(T)), &addr);
   INTRINSIC(pipe_barrier, PIPE_V);
   vector_eltwise_vv_1d<VectorOpTy::VADD>(&addr, &work, &addr);
   INTRINSIC(pipe_barrier, PIPE_V);

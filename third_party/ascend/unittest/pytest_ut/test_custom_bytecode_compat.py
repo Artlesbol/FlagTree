@@ -170,5 +170,11 @@ def test_short_row_store_abi(suffix, element):
         late.lower_private_ops(text.replace(types[1], types[1].replace(gm, ub)))
     with pytest.raises(ValueError, match='rank-2 UB'):
         late.lower_private_ops(text.replace(types[0], types[0].replace('1024x?x', '4096x')))
-    with pytest.raises(ValueError, match='disagree'):
+    with pytest.raises(ValueError, match='workspaces|disagree'):
         late.lower_private_ops(text.replace(types[2], types[2].replace('xi32', 'xf32')))
+    for invalid in [
+            f'memref<1024xi32, strided<[2]>, {ub}>', f'memref<1024xi32, strided<[1], offset: 1>, {ub}>',
+            f'memref<1024xi32, strided<[1], offset: ?>, {ub}>', f'memref<2048xi32, {ub}>', f'memref<7xi32, {ub}>'
+    ]:
+        with pytest.raises(ValueError, match='workspaces'):
+            late.lower_private_ops(text.replace(types[2], invalid))

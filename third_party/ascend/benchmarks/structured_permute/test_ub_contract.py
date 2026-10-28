@@ -85,3 +85,64 @@ def test_byte_storage_descriptors(launch, layout, n, mode):
     expected = torch.full((STORAGE, ), -91, dtype=dst_dtype)
     expected[do:do + n * ds:ds] = cpu[so:so + n * ss:ss].to(dst_dtype)
     assert torch.equal(a.cpu(), expected), (mode, layout, n)
+
+
+@pytest.fixture(scope='module')
+def launch_store():
+    torch.npu.set_device(0)
+    library = ctypes.CDLL(str(Path(os.environ['FLAGTREE_UB_CONTRACT_LIBRARY']).resolve()))
+    call = library.launch_short_row_contract
+    call.argtypes = [ctypes.c_void_p] * 5 + [ctypes.c_uint32] * 2
+    call.restype = ctypes.c_uint32
+
+    def run(x, y, debug, config, programs):
+        rc = call(torch.npu.current_stream().npu_stream, x.data_ptr(), y.data_ptr(), debug.data_ptr(),
+                  config.data_ptr(), programs, x.element_size())
+        assert rc == 0, rc
+        torch.npu.synchronize()
+
+    return run
+
+
+@pytest.mark.parametrize('dtype', [torch.int16, torch.int32])
+@pytest.mark.parametrize('programs', [1, 41])
+@pytest.mark.parametrize('rows', [0, 1, 7, 63, 64, 65, 127, 128, 129, 1024])
+@pytest.mark.parametrize('cols,ss,cs,so,padding,offset,tail', [
+    (4, 4, 1, 0, 0, 0, 0),
+    (4, 5, 1, 1, 3, 1, 1),
+    (4, 8, 1, 0, 0, 4, 0),
+    (4, 8, 1, 1, 7, 7, 0),
+    (4, 12, 2, 1, 13, 1, 1),
+    (7, 9, 1, 1, 3, 7, 1),
+])
+def test_short_row_store_physical_layouts(launch_store, dtype, programs, rows, cols, ss, cs, so, padding, offset, tail):
+    input_size, work_size = 16384, 1056
+    cpu = (torch.arange(programs * input_size, dtype=torch.int32) * 977 - 31001).to(dtype)
+    source = cpu.npu()
+    stride, start = programs * cols - tail + padding, 32 + offset
+    storage = torch.full((start + max(1, rows) * stride + 32, ), -91, dtype=dtype, device='npu')
+    debug = torch.full((programs * 2 * work_size, ), -999, dtype=torch.int32, device='npu')
+    config = torch.tensor([rows, cols, ss, cs, so, stride, start, programs, tail, 8, 16], dtype=torch.int32).npu()
+    expected = torch.full_like(storage.cpu(), -91)
+    for program in range(programs):
+        active = cols - (tail if program == programs - 1 else 0)
+        if rows:
+            ri, ci = torch.arange(rows)[:, None], torch.arange(active)[None, :]
+            expected[start + ri * stride + program * cols + ci] = cpu[program * input_size + so + ri * ss + ci * cs]
+    for _ in range(3):
+        storage.fill_(-91)
+        launch_store(source, storage, debug, config, programs)
+        assert torch.equal(storage.cpu(), expected)
+        physical = debug.cpu().reshape(programs, 2, work_size)
+        for program in range(programs):
+            active = cols - (tail if program == programs - 1 else 0)
+            n = min(rows * (32 // cpu.element_size()), 1024) if active else 0
+            # The aligned/dense fast path writes neither workspace.
+            native = (so * cpu.element_size()) % 32 == 0 and ((ss * cpu.element_size()) % 32 == 0 or
+                                                              (ss == active and stride == active)) and cs == 1
+            if native:
+                n = 0
+            for which, begin in enumerate([8, 16]):
+                assert torch.all(physical[program, which, :begin] == -177)
+                assert torch.all(physical[program, which, begin + n:] == -177)
+    assert torch.equal(source.cpu(), cpu)

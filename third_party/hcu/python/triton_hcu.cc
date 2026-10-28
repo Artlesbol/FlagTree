@@ -405,9 +405,9 @@ void init_triton_hcu(py::module &&m) {
       module->eraseNamedMetadata(openclVersion);
 
     // LLVM 22 drops the size operand from lifetime intrinsics, while DTK's
-    // older Clang still expects it. Drop these optimization markers at the final
-    // IR handoff, after LLVM optimization, preserving executable memory and
-    // synchronization operations.
+    // older Clang still expects it. Drop these optimization markers at the
+    // final IR handoff, after LLVM optimization, preserving executable memory
+    // and synchronization operations.
     for (llvm::Function &function : llvm::make_early_inc_range(*module)) {
       auto id = function.getIntrinsicID();
       if (id != llvm::Intrinsic::lifetime_start &&

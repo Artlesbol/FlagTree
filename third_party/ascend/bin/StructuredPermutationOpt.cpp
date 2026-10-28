@@ -246,11 +246,8 @@ struct HoistStructuredPermutationAddressesPass
     auto staticTable = MemRefType::get({indices->count}, builder.getI32Type(), MemRefLayoutAttrInterface{}, indices->space);
     auto pointer = [&](int64_t address) -> Value {
       Value constant = builder.create<arith::ConstantIntOp>(loc, address, 64);
-      OperationState state(loc, "hivm.hir.pointer_cast");
-      state.addOperands(constant);
-      state.addTypes(staticTable);
-      return builder.create<memref::CastOp>(loc, tableType,
-                                          builder.create(state)->getResult(0));
+      Value storage = builder.create<hivm::PointerCastOp>(loc, staticTable, constant);
+      return builder.create<memref::CastOp>(loc, tableType, storage);
     };
     Value tableA = pointer(indices->address), tableB = pointer(scratch->address);
     auto declare = [&](StringRef name, TypeRange types) {

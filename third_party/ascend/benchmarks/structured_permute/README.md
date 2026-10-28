@@ -298,10 +298,10 @@ FFT transform times.
 
 ```bash
 TRITON_ALL_BLOCKS_PARALLEL=1 python "$bench/bench_matrix_transport.py" \
-  --scene store --library "$out/aiv-build/libpermute_reference.so" \
+  --scene store --library "$out/aiv-build/libmatrix_transport_reference.so" \
   --output "$out/matrix-store.json"
 TRITON_ALL_BLOCKS_PARALLEL=1 python "$bench/bench_matrix_transport.py" \
-  --scene transpose --library "$out/aiv-build/libpermute_reference.so" \
+  --scene transpose --library "$out/aiv-build/libmatrix_transport_reference.so" \
   --output "$out/matrix-transpose.json"
 ```
 
@@ -310,9 +310,8 @@ Each policy verifies exact outputs/guards before capture, after replay into
 cleared outputs, and after every timing round. Run `bench_paired.py` as well to
 check the previous structured-permutation performance baseline.
 
-The late `vectorize-structured-ub-copies` pass also recognizes native padded-row
-to packed-row UB copies inside these kernels. It changes only a proven
-nonoverlapping, aligned rank-two copy with unit inner strides, no padding mode,
-matching static shapes/types and bounded hardware repeat stride. A packed
-`vreducev2` replaces its scalar compaction without allocating more UB. Other
-copies retain the original callee and all surrounding synchronization.
+Short strided GM loads explicitly allocate aligned UB rows before creating the
+logical view. This prevents a later packed reshape from forcing scalar GM
+loads. Native CANN `vreducev2` compaction handles the resulting padded-to-packed
+UB copy; no additional compaction pass or SDK helper replacement is needed.
+Dense GM loads keep their existing coalescing path.

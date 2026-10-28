@@ -255,22 +255,6 @@ REGISTER_SHORT_ROW_STORE(float, float)
 REGISTER_SHORT_ROW_STORE(int16, int16_t)
 REGISTER_SHORT_ROW_STORE(int32, int32_t)
 
-// CANN may compact a padded load before a reshape/split. Keep that copy on
-// PIPE_V too: the late typed pass proves aligned nonoverlapping buffers, unit
-// inner strides, a sub-block row, and bounded hardware repeat strides.
-#define REGISTER_UB_COMPACTION(SUFFIX, TYPE)                                   \
-  extern "C" __aiv__ __attribute__((always_inline)) void                       \
-      _mlir_ciface_custom_flagtree_compact_2d_##SUFFIX(                        \
-          memref_t<__ubuf__ TYPE, 2> *src, memref_t<__ubuf__ TYPE, 2> *dst) {  \
-    vreducev2_2d_with_pattern_mode<TYPE, PatternMode::ALL_ELEMENTS>(src, dst); \
-  }
-
-REGISTER_UB_COMPACTION(half, half)
-REGISTER_UB_COMPACTION(bf16, bfloat16_t)
-REGISTER_UB_COMPACTION(float, float)
-REGISTER_UB_COMPACTION(int16, int16_t)
-REGISTER_UB_COMPACTION(int32, int32_t)
-
 // These conversions serve byte permutations only: word values are always in
 // [-128,127]. Half represents that range exactly, so no saturation/overflow
 // conversion or CANN's sub-block 2D cast is required.

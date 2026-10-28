@@ -9,6 +9,11 @@ ascendc_library(permute_device STATIC aiv.cpp)
 add_library(permute_reference SHARED launch.cpp)
 target_link_libraries(permute_reference PRIVATE permute_device)
 
+# Build each independent reference as its own SDK device object.
+ascendc_library(matrix_transport_device STATIC matrix_transport_aiv.cpp)
+add_library(matrix_transport_reference SHARED matrix_transport_launch.cpp)
+target_link_libraries(matrix_transport_reference PRIVATE matrix_transport_device)
+
 # Opt-in ABI contract tests link the same packaged device bitcode as Triton.
 set(FLAGTREE_DEVICE_BITCODE "" CACHE FILEPATH "Packaged custom_ops.bc for UB ABI tests")
 if(FLAGTREE_DEVICE_BITCODE)

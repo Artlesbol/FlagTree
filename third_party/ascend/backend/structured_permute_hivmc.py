@@ -46,12 +46,12 @@ def main():
         ]
         subprocess.run(cmd, env=env, check=True)
         calls = lower_private_ops(generic.read_text())
-        optimizations = ["--vectorize-structured-ub-copies"]
+        optimizations = []
         if env.get("FLAGTREE_PERMUTE_ADDRESS_HOIST") == "1":
             optimizations.append("--hoist-structured-permutation-addresses")
         if env.get("FLAGTREE_PERMUTE_STORE_SYNC") == "1":
             optimizations.append("--coalesce-structured-store-sync")
-        if optimizations:
+        if (optimizations and '"scf.for"' in calls and "func.call @custom_flagtree_stride_gather_" in calls):
             # DLTI target-system assembly changed between LLVM versions. Keep
             # this metadata opaque during optimization, then restore it exactly.
             prefix = "flagtree_opaque_dlti"

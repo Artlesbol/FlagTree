@@ -179,34 +179,40 @@ short_row_store(memref_t<__ubuf__ T, 2> *src, memref_t<__gm__ T, 2> *dst,
   }
   const int64_t chunkRows = min(rows, addresses->sizes[0] / blockElements);
   const int64_t n = chunkRows * blockElements;
-  auto addr = *addresses;
-  auto work = *scratch;
-  addr.sizes[0] = work.sizes[0] = n;
-  auto addrPtr = addr.aligned + addr.offset;
-  auto workPtr = work.aligned + work.offset;
+  auto addrPtr = addresses->aligned + addresses->offset;
+  auto workPtr = scratch->aligned + scratch->offset;
+  auto unsignedAddr = reinterpret_cast<__ubuf__ uint32_t *>(addrPtr);
   // Duplicate the final valid column into padding. No address refers to a
-  // masked-out element or reads beyond the last source row.
+  // masked-out element or reads beyond the last source row. These are packed
+  // compiler-owned workspaces, so use SIMD directly. The low-bit extraction
+  // must use unsigned shifts: signed VSHR extends the sign bit and would create
+  // negative addresses in padding, even when those lanes are not stored to GM.
   arange_1d_core<int32_t>(addrPtr, n, 0, 1);
   INTRINSIC(pipe_barrier, PIPE_V);
-  vector_eltwise_vs_1d<VectorOpTy::VSHR>(&addr, int32_t(shift), &work);
+  INTRINSIC_NO_ARGS(set_mask_count);
+  INTRINSIC(set_vector_mask, 0, n);
+  INTRINSIC(vshr, workPtr, addrPtr, int32_t(shift), 1, 1, 1, 8, 8, 0);
   INTRINSIC(pipe_barrier, PIPE_V);
-  vector_eltwise_vs_1d<VectorOpTy::VMULS>(&work, int32_t(srcStride * sizeof(T)),
-                                          &work);
+  INTRINSIC(vmuls, workPtr, workPtr, int32_t(srcStride * sizeof(T)), 1, 1, 1, 8,
+            8);
   INTRINSIC(pipe_barrier, PIPE_V);
-  vector_eltwise_vs_1d<VectorOpTy::VSHL>(&addr, int32_t(32 - shift), &addr);
+  INTRINSIC(vshl, unsignedAddr, unsignedAddr, uint32_t(32 - shift), 1, 1, 1, 8,
+            8);
   INTRINSIC(pipe_barrier, PIPE_V);
-  vector_eltwise_vs_1d<VectorOpTy::VSHR>(&addr, int32_t(32 - shift), &addr);
+  INTRINSIC(vshr, unsignedAddr, unsignedAddr, uint32_t(32 - shift), 1, 1, 1, 8,
+            8, 0);
   INTRINSIC(pipe_barrier, PIPE_V);
-  vector_eltwise_vs_1d<VectorOpTy::VMINS>(&addr, int32_t(cols - 1), &addr);
+  INTRINSIC(vmins, addrPtr, addrPtr, int32_t(cols - 1), 1, 1, 1, 8, 8);
   INTRINSIC(pipe_barrier, PIPE_V);
-  vector_eltwise_vs_1d<VectorOpTy::VMULS>(
-      &addr, int32_t(src->strides[1] * sizeof(T)), &addr);
+  INTRINSIC(vmuls, addrPtr, addrPtr, int32_t(src->strides[1] * sizeof(T)), 1, 1,
+            1, 8, 8);
   INTRINSIC(pipe_barrier, PIPE_V);
-  vector_eltwise_vv_1d<VectorOpTy::VADD>(&addr, &work, &addr);
+  INTRINSIC(vadd, addrPtr, addrPtr, workPtr, 1, 1, 1, 1, 8, 8, 8);
   INTRINSIC(pipe_barrier, PIPE_V);
-  vector_eltwise_vs_1d<VectorOpTy::VADDS>(
-      &addr, int32_t(reinterpret_cast<intptr_t>(in)), &addr);
+  INTRINSIC(vadds, addrPtr, addrPtr, int32_t(reinterpret_cast<intptr_t>(in)), 1,
+            1, 1, 8, 8);
   INTRINSIC(pipe_barrier, PIPE_V);
+  INTRINSIC_NO_ARGS(set_mask_norm);
   using Bits =
       typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
   for (int64_t row = 0; row < rows; row += chunkRows) {
@@ -224,9 +230,12 @@ short_row_store(memref_t<__ubuf__ T, 2> *src, memref_t<__gm__ T, 2> *dst,
     INTRINSIC(set_flag, PIPE_MTE3, PIPE_V, LIB_EVENT_ID0);
     INTRINSIC(wait_flag, PIPE_MTE3, PIPE_V, LIB_EVENT_ID0);
     if (row + chunkRows < rows) {
-      vector_eltwise_vs_1d<VectorOpTy::VADDS>(
-          &addr, int32_t(chunkRows * srcStride * sizeof(T)), &addr);
+      INTRINSIC_NO_ARGS(set_mask_count);
+      INTRINSIC(set_vector_mask, 0, n);
+      INTRINSIC(vadds, addrPtr, addrPtr,
+                int32_t(chunkRows * srcStride * sizeof(T)), 1, 1, 1, 8, 8);
       INTRINSIC(pipe_barrier, PIPE_V);
+      INTRINSIC_NO_ARGS(set_mask_norm);
     }
   }
 }

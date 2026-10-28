@@ -125,3 +125,39 @@ def test_boundary_checked_short_row_store(dtype):
     actual = storage.cpu()
     assert torch.equal(actual[start:start + cpu.numel()].reshape_as(expected), expected)
     assert torch.all(actual[:start] == -111) and torch.all(actual[start + cpu.numel():] == -111)
+
+
+@triton.jit
+def _unmasked_view(X, Y, JOIN: tl.constexpr):
+    program = tl.program_id(0)
+    r = tl.arange(0, 32)[:, None]
+    c = tl.arange(0, 4)[None, :]
+    raw = tl.load(X + program * 32 * 37 + r * 37 + c)
+    if JOIN:
+        a, b = tl.split(tl.reshape(raw, (64, 2)))
+        value = tl.reshape(tl.join(a + 1, b + 1), (128, ))
+    else:
+        value = tl.reshape(raw, (128, )) + 1
+    i = tl.arange(0, 128)
+    tl.store(Y + program * 128 + i, value)
+
+
+@pytest.mark.parametrize('dtype', [torch.float16, torch.bfloat16, torch.float32, torch.int16, torch.int32])
+@pytest.mark.parametrize('join', [False, True])
+def test_unmasked_strided_load_packed_view(dtype, join):
+    batch, start, size = 41, 39, 41 * 128
+    cpu = torch.arange(batch * 32 * 37, dtype=torch.int32).remainder(97).to(dtype)
+    source = cpu.npu()
+    storage = torch.full((start + size + 32, ), -111, dtype=dtype, device='npu')
+    compiled = _unmasked_view[(batch, )](source, storage[start:start + size], join, num_warps=8, num_stages=1,
+                                         multibuffer=False)
+    torch.npu.synchronize()
+    expected = cpu.reshape(batch, 32, 37)[:, :, :4].contiguous().flatten() + 1
+    actual = storage.cpu()
+    assert torch.equal(actual[start:start + size], expected)
+    assert torch.all(actual[:start] == -111) and torch.all(actual[start + size:] == -111)
+    assert torch.equal(source.cpu(), cpu)
+    if not join:
+        # The aligned load and native UB compaction also work in a kernel with
+        # no private permutation operations or TLE imports.
+        assert 'custom_flagtree_' not in str(compiled.asm['ttadapter'])

@@ -158,9 +158,9 @@ def test_unmasked_strided_load_packed_view(dtype, join):
     assert torch.all(actual[:start] == -111) and torch.all(actual[start + size:] == -111)
     assert torch.equal(source.cpu(), cpu)
     if not join:
-        # The aligned load and native UB compaction also work in a kernel with
-        # no private permutation operations or TLE imports.
-        assert 'custom_flagtree_' not in str(compiled.asm['ttadapter'])
+        # The standalone load primitive needs neither split/join nor a TLE import.
+        assert 'custom_flagtree_short_row_load_' in str(compiled.asm['ttadapter'])
+        assert 'custom_flagtree_split_' not in str(compiled.asm['ttadapter'])
 
 
 @triton.jit
@@ -168,9 +168,8 @@ def _load_layout_probe(X, Y):
     _unmasked_view(X, Y, True)
 
 
-@pytest.mark.parametrize('dtype,block', [(torch.float16, 16), (torch.float32, 8)])
-def test_unmasked_load_physical_row_alignment(dtype, block, tmp_path, monkeypatch):
-    import re
+@pytest.mark.parametrize('dtype', [torch.float16, torch.float32])
+def test_unmasked_load_physical_row_alignment(dtype, tmp_path, monkeypatch):
     # This must check CANN's final physical descriptors. Early padded allocs can
     # disappear while bufferization folds a reshape into the load destination.
     monkeypatch.setenv('FLAGTREE_PERMUTE_DUMP_DIR', str(tmp_path))
@@ -185,12 +184,8 @@ def test_unmasked_load_physical_row_alignment(dtype, block, tmp_path, monkeypatc
     dumps = list(tmp_path.glob('*/after.mlir'))
     assert dumps, 'Expected a fresh physical IR dump'
     text = '\n'.join(path.read_text() for path in dumps)
-    # The load's UB descriptor must retain one 32-byte row, before any
-    # native UB compaction needed by split/join.
+    # Native CANN loads into compact short rows must not reappear. The private
+    # load explicitly performs aligned DMA followed by vector compaction.
     suffix = 'half' if dtype == torch.float16 else 'float'
-    calls = re.findall(r'(?:func\.)?call @load_gm_to_ubuf_2d_' + suffix + r'\([^,]+, (%[\w.$]+),', text)
-    assert calls, text
-    for operand in calls:
-        cast = re.search(re.escape(operand) + r' = memref.cast [^\n]+', text)
-        assert cast, operand
-        assert f'strided<[{block}, 1]' in cast[0] or f'memref<32x{block}x' in cast[0], cast[0]
+    assert f'call @custom_flagtree_short_row_load_{suffix}' in text
+    assert f'call @load_gm_to_ubuf_2d_{suffix}' not in text

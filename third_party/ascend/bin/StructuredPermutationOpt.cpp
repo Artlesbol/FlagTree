@@ -1,6 +1,7 @@
 // Copyright 2026 FlagOS Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+#include "bishengir/Dialect/HIVM/IR/HIVM.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -64,8 +65,12 @@ static std::optional<PermuteBuffer> resolvePermuteBuffer(mlir::Value value) {
     llvm::APInt address;
     if (!matchPattern(op->getOperand(0), m_ConstantInt(&address)))
       return std::nullopt;
-    int64_t start = address.getSExtValue() + offset * bytes;
-    if (start < 0 || start > std::numeric_limits<int32_t>::max() - count * bytes)
+    int64_t base = address.getSExtValue();
+    if (base < 0 || base > std::numeric_limits<int32_t>::max() || offset < 0 ||
+        offset > (std::numeric_limits<int32_t>::max() - base) / bytes)
+      return std::nullopt;
+    int64_t start = base + offset * bytes;
+    if (start > std::numeric_limits<int32_t>::max() - count * bytes)
       return std::nullopt;
     return PermuteBuffer{start, count, bytes, type.getMemorySpace()};
   }
@@ -83,7 +88,7 @@ static std::optional<PermuteBuffer> resolvePermuteBuffer(mlir::Value value) {
       return std::nullopt;
     int64_t start = source->address;
     for (auto [i, off] : llvm::enumerate(view.getStaticOffsets())) {
-      if (ShapedType::isDynamic(off))
+      if (ShapedType::isDynamic(off) || off < 0 || off >= sourceType.getDimSize(i))
         return std::nullopt;
       start += off * sourceStrides[i] * bytes;
     }
@@ -95,13 +100,18 @@ static std::optional<PermuteBuffer> resolvePermuteBuffer(mlir::Value value) {
   return std::nullopt;
 }
 
-static std::optional<PermuteSource> resolvePermuteSource(mlir::Value value) {
+static std::optional<PermuteSource> resolvePermuteSource(mlir::Value value, bool aliasOnly = false) {
   using namespace mlir;
   if (auto cast = value.getDefiningOp<memref::CastOp>())
-    return resolvePermuteSource(cast.getSource());
+    return resolvePermuteSource(cast.getSource(), aliasOnly);
   if (auto *op = value.getDefiningOp()) {
     if (isa<memref::CollapseShapeOp, memref::ExpandShapeOp>(op))
-      return resolvePermuteSource(op->getOperand(0));
+      return resolvePermuteSource(op->getOperand(0), aliasOnly);
+    // For interference checks, a subview is conservatively covered by the
+    // entire source allocation. Actual gather admission still needs an exact
+    // packed descriptor; never use this over-approximation to generate indices.
+    if (aliasOnly && isa<memref::SubViewOp>(op))
+      return resolvePermuteSource(op->getOperand(0), true);
     if (auto select = dyn_cast<arith::SelectOp>(op)) {
       auto a = resolvePermuteBuffer(select.getTrueValue());
       auto b = resolvePermuteBuffer(select.getFalseValue());
@@ -158,7 +168,8 @@ struct HoistStructuredPermutationAddressesPass
     auto indices = resolvePermuteBuffer(call.getOperand(1));
     auto destination = resolvePermuteBuffer(call.getOperand(2));
     auto scratch = resolvePermuteBuffer(call.getOperand(3));
-    if (!source || !indices || !destination || !scratch ||
+    auto ub = hivm::AddressSpaceAttr::get(&getContext(), hivm::AddressSpace::UB);
+    if (!source || !indices || !destination || !scratch || indices->space != ub ||
         indices->bytes != 4 || scratch->bytes != 4 ||
         source->first.bytes != destination->bytes ||
         call.getOperand(1).getType() != call.getOperand(3).getType() ||
@@ -201,7 +212,7 @@ struct HoistStructuredPermutationAddressesPass
         if (buffer) {
           if (permuteOverlap(*buffer, *indices) || permuteOverlap(*buffer, *scratch))
             safe = false;
-        } else if (auto alternatives = resolvePermuteSource(value)) {
+        } else if (auto alternatives = resolvePermuteSource(value, true)) {
           for (auto b : {alternatives->first, alternatives->second})
             if (permuteOverlap(b, *indices) || permuteOverlap(b, *scratch))
               safe = false;
@@ -217,6 +228,21 @@ struct HoistStructuredPermutationAddressesPass
     auto loc = call.getLoc();
     auto module = getOperation();
     auto tableType = cast<MemRefType>(call.getOperand(1).getType());
+    StringRef prepare = "custom_flagtree_prepare_addresses";
+    std::string name = "custom_flagtree_addressed_gather_" + suffix.str();
+    auto compatible = [&](StringRef symbol, TypeRange inputs) {
+      auto *existing = module.lookupSymbol(symbol);
+      if (!existing)
+        return true;
+      auto fn = dyn_cast<func::FuncOp>(existing);
+      return fn && fn.isPrivate() && fn.getBody().empty() &&
+             fn->hasAttr("flagtree.structured_address_table") &&
+             fn.getFunctionType() == builder.getFunctionType(inputs, {});
+    };
+    if (!compatible(prepare, {tableType, tableType, builder.getI32Type(),
+                              builder.getI32Type(), builder.getI32Type()}) ||
+        !compatible(name, {tableType, call.getOperand(2).getType()}))
+      return;
     auto staticTable = MemRefType::get({indices->count}, builder.getI32Type(), MemRefLayoutAttrInterface{}, indices->space);
     auto pointer = [&](int64_t address) -> Value {
       Value constant = builder.create<arith::ConstantIntOp>(loc, address, 64);
@@ -234,13 +260,13 @@ struct HoistStructuredPermutationAddressesPass
       auto fn = decl.create<func::FuncOp>(loc, name, builder.getFunctionType(types, {}));
       fn.setPrivate();
       fn->setAttr("hacc.always_inline", builder.getUnitAttr());
+      fn->setAttr("flagtree.structured_address_table", builder.getUnitAttr());
       fn->setAttr("llvm.emit_c_interface", builder.getUnitAttr());
       // Inherit the core-kind attribute from the existing private declaration.
       if (auto old = module.lookupSymbol<func::FuncOp>(call.getCallee()))
         if (auto kind = old->getAttr("hivm.func_core_type"))
           fn->setAttr("hivm.func_core_type", kind);
     };
-    StringRef prepare = "custom_flagtree_prepare_addresses";
     declare(prepare, {tableType, tableType, builder.getI32Type(), builder.getI32Type(), builder.getI32Type()});
     SmallVector<Value> args{tableA, tableB};
     for (int64_t v : {source->first.bytes, source->first.address, source->second.address})
@@ -250,8 +276,6 @@ struct HoistStructuredPermutationAddressesPass
     Value chosen = tableA;
     if (source->condition)
       chosen = builder.create<arith::SelectOp>(loc, source->condition, tableA, tableB);
-    std::string name = "custom_flagtree_addressed_gather_" +
-                       call.getCallee().drop_front(StringRef("custom_flagtree_stride_gather_").size()).str();
     declare(name, {tableType, call.getOperand(2).getType()});
     builder.create<func::CallOp>(loc, name, TypeRange{}, ValueRange{chosen, call.getOperand(2)});
     call.erase();

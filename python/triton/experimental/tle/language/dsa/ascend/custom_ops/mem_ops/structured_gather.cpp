@@ -1,6 +1,7 @@
 // Copyright 2026 FlagOS Contributors
 // SPDX-License-Identifier: Apache-2.0
 // Private compiler primitive: logical element indices, arbitrary UB strides.
+#include "DMA/DMAUtils.h"
 #include "Utils.h"
 #include "Vector/Arange/ArangeUtils.h"
 #include "Vector/VecUtils.h"
@@ -134,6 +135,115 @@ REGISTER_STRUCTURED_SPLIT(bf16, bfloat16_t)
 REGISTER_STRUCTURED_SPLIT(float, float)
 REGISTER_STRUCTURED_SPLIT(int16, int16_t)
 REGISTER_STRUCTURED_SPLIT(int32, int32_t)
+
+// Legalize a compact sub-block row into aligned UB rows before GM DMA. Both
+// workspaces are allocated by the compiler before UB planning, at most 8 KiB
+// together. No scalar GM writes or per-element scalar copy is used.
+// Byte-counted DMA preserves the columns owned by adjacent programs, including
+// masked tails.
+template <typename T>
+__aiv__ __attribute__((always_inline)) void
+short_row_store(memref_t<__ubuf__ T, 2> *src, memref_t<__gm__ T, 2> *dst,
+                memref_t<__ubuf__ int32_t, 1> *addresses,
+                memref_t<__ubuf__ int32_t, 1> *scratch) {
+  constexpr int blockElements = 32 / sizeof(T);
+  constexpr int shift = sizeof(T) == 4 ? 3 : 4;
+  const int64_t rows = src->sizes[0], cols = src->sizes[1];
+  if (rows == 0 || cols == 0)
+    return;
+  auto in = src->aligned + src->offset;
+  auto out = dst->aligned + dst->offset;
+  const int64_t srcStride = src->strides[0], dstStride = dst->strides[0];
+  // The operation is scheduled as PIPE_V. Internal MTE3 work is drained before
+  // returning, so subsequent users and UB reuse observe the completed store.
+  if (isAddress32ByteAligned(in) &&
+      ((srcStride * sizeof(T)) % 32 == 0 ||
+       (srcStride == cols && dstStride == cols))) {
+    INTRINSIC(set_flag, PIPE_V, PIPE_MTE3, LIB_EVENT_ID0);
+    INTRINSIC(wait_flag, PIPE_V, PIPE_MTE3, LIB_EVENT_ID0);
+    if (srcStride == cols && dstStride == cols) {
+      store_ubuf_to_gm_intrin_core(in, 0, out, 0, 1, rows * cols * sizeof(T), 0,
+                                   0);
+    } else {
+      // Split long row counts to respect the DMA instruction's burst limit.
+      for (int64_t row = 0; row < rows; row += INTRIN_MAX_BURST_CNT) {
+        int64_t n = min(rows - row, int64_t(INTRIN_MAX_BURST_CNT));
+        store_ubuf_to_gm_intrin_core(
+            in, row * srcStride, out, row * dstStride, n, cols * sizeof(T),
+            srcStride * sizeof(T) / 32 - 1, (dstStride - cols) * sizeof(T));
+      }
+    }
+    INTRINSIC(set_flag, PIPE_MTE3, PIPE_V, LIB_EVENT_ID0);
+    INTRINSIC(wait_flag, PIPE_MTE3, PIPE_V, LIB_EVENT_ID0);
+    return;
+  }
+  const int64_t chunkRows = min(rows, addresses->sizes[0] / blockElements);
+  const int64_t n = chunkRows * blockElements;
+  auto addr = *addresses;
+  auto work = *scratch;
+  addr.sizes[0] = work.sizes[0] = n;
+  auto addrPtr = addr.aligned + addr.offset;
+  auto workPtr = work.aligned + work.offset;
+  // Duplicate the final valid column into padding. No address refers to a
+  // masked-out element or reads beyond the last source row.
+  arange_1d_core<int32_t>(addrPtr, n, 0, 1);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vs_1d<VectorOpTy::VSHR>(&addr, int32_t(shift), &work);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vs_1d<VectorOpTy::VMULS>(&work, int32_t(srcStride * sizeof(T)),
+                                          &work);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vs_1d<VectorOpTy::VSHL>(&addr, int32_t(32 - shift), &addr);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vs_1d<VectorOpTy::VSHR>(&addr, int32_t(32 - shift), &addr);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vs_1d<VectorOpTy::VMINS>(&addr, int32_t(cols - 1), &addr);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vs_1d<VectorOpTy::VMULS>(&addr, int32_t(sizeof(T)), &addr);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vv_1d<VectorOpTy::VADD>(&addr, &work, &addr);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  vector_eltwise_vs_1d<VectorOpTy::VADDS>(
+      &addr, int32_t(reinterpret_cast<intptr_t>(in)), &addr);
+  INTRINSIC(pipe_barrier, PIPE_V);
+  using Bits =
+      typename std::conditional<sizeof(T) == 2, uint16_t, uint32_t>::type;
+  for (int64_t row = 0; row < rows; row += chunkRows) {
+    int64_t activeRows = min(rows - row, chunkRows);
+    INTRINSIC_NO_ARGS(set_mask_count);
+    INTRINSIC(set_vector_mask, 0, activeRows * blockElements);
+    INTRINSIC(vgather, reinterpret_cast<__ubuf__ Bits *>(workPtr),
+              reinterpret_cast<__ubuf__ uint32_t *>(addrPtr), 0, 8, 1);
+    INTRINSIC_NO_ARGS(set_mask_norm);
+    INTRINSIC(set_flag, PIPE_V, PIPE_MTE3, LIB_EVENT_ID0);
+    INTRINSIC(wait_flag, PIPE_V, PIPE_MTE3, LIB_EVENT_ID0);
+    store_ubuf_to_gm_intrin_core(
+        reinterpret_cast<__ubuf__ T *>(workPtr), 0, out, row * dstStride,
+        activeRows, cols * sizeof(T), 0, (dstStride - cols) * sizeof(T));
+    INTRINSIC(set_flag, PIPE_MTE3, PIPE_V, LIB_EVENT_ID0);
+    INTRINSIC(wait_flag, PIPE_MTE3, PIPE_V, LIB_EVENT_ID0);
+    if (row + chunkRows < rows) {
+      vector_eltwise_vs_1d<VectorOpTy::VADDS>(
+          &addr, int32_t(chunkRows * srcStride * sizeof(T)), &addr);
+      INTRINSIC(pipe_barrier, PIPE_V);
+    }
+  }
+}
+
+#define REGISTER_SHORT_ROW_STORE(SUFFIX, TYPE)                                 \
+  extern "C" __aiv__ __attribute__((always_inline)) void                       \
+      _mlir_ciface_custom_flagtree_short_row_store_##SUFFIX(                   \
+          memref_t<__ubuf__ TYPE, 2> *src, memref_t<__gm__ TYPE, 2> *dst,      \
+          memref_t<__ubuf__ int32_t, 1> *addresses,                            \
+          memref_t<__ubuf__ int32_t, 1> *scratch) {                            \
+    short_row_store(src, dst, addresses, scratch);                             \
+  }
+
+REGISTER_SHORT_ROW_STORE(half, half)
+REGISTER_SHORT_ROW_STORE(bf16, bfloat16_t)
+REGISTER_SHORT_ROW_STORE(float, float)
+REGISTER_SHORT_ROW_STORE(int16, int16_t)
+REGISTER_SHORT_ROW_STORE(int32, int32_t)
 
 // These conversions serve byte permutations only: word values are always in
 // [-128,127]. Half represents that range exactly, so no saturation/overflow

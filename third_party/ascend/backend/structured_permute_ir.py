@@ -35,16 +35,20 @@ def split_fields(text):
     return fields + [text[start:].strip()]
 
 
-def _canonical_memref(typ):
+def _canonical_memref(typ, rank=1, space='ub'):
     if not typ.startswith('memref<') or not typ.endswith('>'):
         raise ValueError('Structured permutation must be bufferized before ABI lowering')
     fields = split_fields(typ[7:-1])
-    match = re.fullmatch(r'(?:\d+|\?)x(f16|bf16|f32|i8|i16|i32)', fields[0])
-    if not match or fields[-1] != '#hivm.address_space<ub>':
-        raise ValueError('Expected a rank-one UB memref, got ' + typ)
+    match = re.fullmatch(r'(?:\d+|\?)x' * rank + r'(f16|bf16|f32|i8|i16|i32)', fields[0])
+    if not match or fields[-1] != '#hivm.address_space<' + space + '>':
+        if rank == 1 and space == 'ub':
+            raise ValueError('Expected a rank-one UB memref, got ' + typ)
+        raise ValueError(f'Expected a rank-{rank} {space.upper()} memref, got ' + typ)
     if len(fields) not in (2, 3) or (len(fields) == 3 and not fields[1].startswith('strided<')):
         raise ValueError('Unsupported structured permutation memref layout: ' + typ)
-    return f'memref<?x{match[1]}, strided<[?], offset: ?>, #hivm.address_space<ub>>'
+    shape = '?x' * rank + match[1]
+    strides = ', '.join(['?'] * rank)
+    return f'memref<{shape}, strided<[{strides}], offset: ?>, #hivm.address_space<{space}>>'
 
 
 def lower_private_ops(text):
@@ -62,7 +66,7 @@ def lower_private_ops(text):
             raise ValueError('Expected a result-free, bufferized private custom operation')
         indent, operands, attrs, types = match.groups()
         symbol = re.search(
-            r'\bsymbol = "(custom_flagtree_(?:(?:stride_gather|split)_'
+            r'\bsymbol = "(custom_flagtree_(?:(?:stride_gather|split|short_row_store)_'
             r'(?:half|bf16|float|int16|int32)|byte_to_word|word_to_byte))"', attrs)
         if not symbol:
             raise ValueError('Unknown FlagTree structured permutation ABI')
@@ -73,13 +77,23 @@ def lower_private_ops(text):
         if len(operands) != arity or len(types) != arity or any(not re.fullmatch(r'%[\w.$-]+(?:#\d+)?', v)
                                                                 for v in operands):
             raise ValueError('Invalid structured permutation operands')
-        canonical = [_canonical_memref(t) for t in types]
+        store = 'short_row_store_' in name
+        if store:
+            canonical = [
+                _canonical_memref(types[0], 2),
+                _canonical_memref(types[1], 2, 'gm'), *[_canonical_memref(t) for t in types[2:]]
+            ]
+            elem = dict(half='f16', bf16='bf16', float='f32', int16='i16', int32='i32')[name.rsplit('_', 1)[1]]
+            expected = [elem, elem, 'i32', 'i32']
+        else:
+            canonical = [_canonical_memref(t) for t in types]
         if cast:
             expected = ['i8', 'i16', 'f16'] if name.endswith('byte_to_word') else ['i16', 'i8', 'f16']
-        else:
+        elif not store:
             elem = dict(half='f16', bf16='bf16', float='f32', int16='i16', int32='i32')[name.rsplit('_', 1)[1]]
             expected = [elem, 'i32', elem, 'i32'] if 'stride_gather' in name else [elem] * 3 + ['i32']
-        if any(not t.startswith('memref<?x' + e + ',') for t, e in zip(canonical, expected)):
+        if any(not t.startswith('memref<' + ('?x?x' if store and i < 2 else '?x') + e + ',')
+               for i, (t, e) in enumerate(zip(canonical, expected))):
             raise ValueError('Private operation symbol and operand types disagree')
         if name in declarations and declarations[name] != canonical:
             raise ValueError('Inconsistent structured permutation declaration')

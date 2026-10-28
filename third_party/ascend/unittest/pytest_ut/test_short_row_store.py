@@ -161,3 +161,36 @@ def test_unmasked_strided_load_packed_view(dtype, join):
         # The aligned load and native UB compaction also work in a kernel with
         # no private permutation operations or TLE imports.
         assert 'custom_flagtree_' not in str(compiled.asm['ttadapter'])
+
+
+@triton.jit
+def _load_layout_probe(X, Y):
+    _unmasked_view(X, Y, True)
+
+
+@pytest.mark.parametrize('dtype,block', [(torch.float16, 16), (torch.float32, 8)])
+def test_unmasked_load_physical_row_alignment(dtype, block, tmp_path, monkeypatch):
+    import re
+    # This must check CANN's final physical descriptors. Early padded allocs can
+    # disappear while bufferization folds a reshape into the load destination.
+    monkeypatch.setenv('FLAGTREE_PERMUTE_DUMP_DIR', str(tmp_path))
+    cpu = torch.arange(32 * 37, dtype=torch.int32).remainder(97).to(dtype)
+    source = cpu.npu()
+    output = torch.full((128, ), -111, dtype=dtype, device='npu')
+    with (compilation := triton.knobs.compilation).scope():
+        compilation.always_compile = True
+        _load_layout_probe[(1, )](source, output, num_warps=8, num_stages=1, multibuffer=False)
+    torch.npu.synchronize()
+    assert torch.equal(output.cpu(), cpu.reshape(32, 37)[:, :4].contiguous().flatten() + 1)
+    dumps = list(tmp_path.glob('*/after.mlir'))
+    assert dumps, 'Expected a fresh physical IR dump'
+    text = '\n'.join(path.read_text() for path in dumps)
+    # The load's UB descriptor must retain one 32-byte row, before any
+    # native UB compaction needed by split/join.
+    suffix = 'half' if dtype == torch.float16 else 'float'
+    calls = re.findall(r'(?:func\.)?call @load_gm_to_ubuf_2d_' + suffix + r'\([^,]+, (%[\w.$]+),', text)
+    assert calls, text
+    for operand in calls:
+        cast = re.search(re.escape(operand) + r' = memref.cast [^\n]+', text)
+        assert cast, operand
+        assert f'strided<[{block}, 1]' in cast[0] or f'memref<32x{block}x' in cast[0], cast[0]

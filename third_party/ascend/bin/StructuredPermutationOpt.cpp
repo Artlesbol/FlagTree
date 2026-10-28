@@ -3,6 +3,8 @@
 
 #include "bishengir/Dialect/HIVM/IR/HIVM.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -278,10 +280,163 @@ struct HoistStructuredPermutationAddressesPass
     call.erase();
   }
 };
+
+// A symbolic element offset: only a common SSA base plus a constant is needed
+// to prove that two contiguous GM stores are disjoint.
+struct StoreOffset { mlir::Value base; int64_t constant; };
+static std::optional<StoreOffset> addStoreOffsets(StoreOffset a, StoreOffset b) {
+  if (a.base && b.base)
+    return std::nullopt;
+  if ((b.constant > 0 && a.constant > std::numeric_limits<int64_t>::max() - b.constant) ||
+      (b.constant < 0 && a.constant < std::numeric_limits<int64_t>::min() - b.constant))
+    return std::nullopt;
+  return StoreOffset{a.base ? a.base : b.base, a.constant + b.constant};
+}
+static std::optional<StoreOffset> resolveStoreOffset(mlir::Value value);
+static std::optional<StoreOffset> resolveStoreExpr(
+    mlir::AffineExpr expr, mlir::affine::AffineApplyOp apply) {
+  using namespace mlir;
+  if (auto c = dyn_cast<AffineConstantExpr>(expr))
+    return StoreOffset{{}, c.getValue()};
+  if (auto d = dyn_cast<AffineDimExpr>(expr))
+    return resolveStoreOffset(apply.getMapOperands()[d.getPosition()]);
+  if (auto sym = dyn_cast<AffineSymbolExpr>(expr))
+    return resolveStoreOffset(apply.getMapOperands()[apply.getAffineMap().getNumDims() + sym.getPosition()]);
+  if (auto binary = dyn_cast<AffineBinaryOpExpr>(expr)) {
+    if (binary.getKind() == AffineExprKind::Add) {
+      auto a = resolveStoreExpr(binary.getLHS(), apply);
+      auto b = resolveStoreExpr(binary.getRHS(), apply);
+      if (a && b)
+        return addStoreOffsets(*a, *b);
+    }
+  }
+  return std::nullopt;
+}
+static std::optional<StoreOffset> resolveStoreOffset(mlir::Value value) {
+  using namespace mlir;
+  llvm::APInt constant;
+  if (matchPattern(value, m_ConstantInt(&constant)))
+    return StoreOffset{{}, constant.getSExtValue()};
+  if (auto apply = value.getDefiningOp<affine::AffineApplyOp>())
+    return resolveStoreExpr(apply.getAffineMap().getResult(0), apply);
+  if (auto add = value.getDefiningOp<arith::AddIOp>()) {
+    auto a = resolveStoreOffset(add.getLhs()), b = resolveStoreOffset(add.getRhs());
+    if (a && b)
+      return addStoreOffsets(*a, *b);
+    return std::nullopt;
+  }
+  return StoreOffset{value, 0};
+}
+struct PlannedStore {
+  mlir::Value allocation;
+  StoreOffset offset;
+  int64_t count;
+  mlir::Type element;
+};
+static std::optional<PlannedStore> getPlannedStore(mlir::Operation *op) {
+  using namespace mlir;
+  auto call = dyn_cast<func::CallOp>(op);
+  if (!call || !call.getCallee().starts_with("store_ubuf_to_gm_1d_") ||
+      call.getNumOperands() != 3 || call.getNumResults())
+    return std::nullopt;
+  llvm::APInt mode;
+  if (!matchPattern(call.getOperand(2), m_ConstantInt(&mode)) || !mode.isZero())
+    return std::nullopt;
+  auto source = dyn_cast<MemRefType>(call.getOperand(0).getType());
+  auto ub = hivm::AddressSpaceAttr::get(op->getContext(), hivm::AddressSpace::UB);
+  auto gm = hivm::AddressSpaceAttr::get(op->getContext(), hivm::AddressSpace::GM);
+  if (!source || source.getMemorySpace() != ub)
+    return std::nullopt;
+  Value dest = call.getOperand(1);
+  while (auto cast = dest.getDefiningOp<memref::CastOp>())
+    dest = cast.getSource();
+  auto type = dyn_cast<MemRefType>(dest.getType());
+  auto view = dest.getDefiningOp<memref::ReinterpretCastOp>();
+  SmallVector<int64_t> strides;
+  int64_t ignored;
+  if (!type || type.getMemorySpace() != gm || type.getRank() != 1 ||
+      type.getElementType() != source.getElementType() ||
+      !type.hasStaticShape() || type.getNumElements() <= 0 ||
+      failed(getPermuteStrides(type, strides, ignored)) || strides[0] != 1 ||
+      !view || view.getMixedOffsets().size() != 1)
+    return std::nullopt;
+  std::optional<StoreOffset> offset;
+  OpFoldResult off = view.getMixedOffsets()[0];
+  if (auto attr = dyn_cast<Attribute>(off))
+    offset = StoreOffset{{}, cast<IntegerAttr>(attr).getInt()};
+  else
+    offset = resolveStoreOffset(cast<Value>(off));
+  if (!offset || offset->constant > std::numeric_limits<int64_t>::max() - type.getNumElements())
+    return std::nullopt;
+  return PlannedStore{view.getSource(), *offset, type.getNumElements(), type.getElementType()};
+}
+static bool disjointPlannedStores(const PlannedStore &a, const PlannedStore &b) {
+  if (a.allocation != b.allocation || a.element != b.element || a.offset.base != b.offset.base)
+    return false;
+  return a.offset.constant + a.count <= b.offset.constant ||
+         b.offset.constant + b.count <= a.offset.constant;
+}
+struct CoalesceStructuredStoreSyncPass
+    : mlir::PassWrapper<CoalesceStructuredStoreSyncPass,
+                       mlir::OperationPass<mlir::ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(CoalesceStructuredStoreSyncPass)
+  llvm::StringRef getArgument() const final { return "coalesce-structured-store-sync"; }
+  llvm::StringRef getDescription() const final {
+    return "Coalesce MTE3-only waits between proven disjoint UB-to-GM stores";
+  }
+  void runOnOperation() final {
+    using namespace mlir;
+    getOperation().walk([&](func::FuncOp function) {
+      bool privatePermutation = false;
+      function.walk([&](func::CallOp call) {
+        privatePermutation |= call.getCallee().starts_with("custom_flagtree_stride_gather_") ||
+                              call.getCallee().starts_with("custom_flagtree_addressed_gather_");
+      });
+      if (!privatePermutation)
+        return;
+      function.walk([&](scf::ForOp loop) {
+        SmallVector<PlannedStore> group;
+        SmallVector<hivm::PipeBarrierOp> pending;
+        for (Operation &op : llvm::make_early_inc_range(*loop.getBody())) {
+          if (auto store = getPlannedStore(&op)) {
+            bool disjoint = llvm::all_of(group, [&](auto &old) {
+              return disjointPlannedStores(old, *store);
+            });
+            if (disjoint) {
+              for (auto barrier : pending)
+                barrier.erase();
+            } else {
+              group.clear();
+            }
+            pending.clear();
+            group.push_back(*store);
+            continue;
+          }
+          if (auto barrier = dyn_cast<hivm::PipeBarrierOp>(&op)) {
+            if (barrier.getPipe().getPipe() == hivm::PIPE::PIPE_MTE3) {
+              if (!group.empty())
+                pending.push_back(barrier);
+              continue;
+            }
+          }
+          // A read/write, another pipeline synchronization, control flow, or an
+          // unknown operation ends the group. Keep the final wait and every
+          // cross-pipeline dependency exactly as CANN scheduled them.
+          if (!isMemoryEffectFree(&op) && !isa<hivm::PointerCastOp>(op)) {
+            group.clear();
+            pending.clear();
+          }
+        }
+      });
+    });
+  }
+};
+
 } // namespace
 
 namespace mlir::triton::ascend {
 void registerStructuredPermutationPasses() {
   mlir::PassRegistration<HoistStructuredPermutationAddressesPass>();
+  mlir::PassRegistration<CoalesceStructuredStoreSyncPass>();
 }
 } // namespace mlir::triton::ascend

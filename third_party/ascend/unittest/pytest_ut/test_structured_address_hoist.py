@@ -19,7 +19,7 @@ def test_physical_address_hoist_admission():
         compiler._get_triton_mlir_opt_path(), str(source),
         '--hoist-structured-permutation-addresses', '--allow-unregistered-dialect',
         '--verify-each'], text=True)
-    admitted = {'packed_double', 'packed_single', 'unaligned_source'}
+    admitted = {'packed_double', 'packed_single', 'unaligned_source', 'before_loop_vector_init'}
     rejected = {'index_extra_read', 'physical_alias', 'unknown_alias', 'index_write',
                 'after_loop_read', 'strided_indices', 'unaligned_indices',
                 'unaligned_scratch', 'unaligned_destination', 'overlapping_tables',

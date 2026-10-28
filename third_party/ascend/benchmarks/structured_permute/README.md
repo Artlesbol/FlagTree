@@ -209,7 +209,11 @@ Other architectures are checked for IR fallback only, not device execution.
 After CANN buffer planning, a typed MLIR pass may reuse the existing private
 index and scratch buffers as two absolute address tables. Admission requires
 fixed packed physical layouts, aligned tables/output, nonoverlapping storage,
-and no other consumer or writer of either table. The input may select between
+and no other consumer or writer of either table. Preheader DMA reads/writes
+and unknown effects also reject reuse: their accesses may still be in flight.
+Only the known int32 vector index initializers are admitted before the loop;
+their scalar seeds synchronize to PIPE_V internally and the preparation helper
+drains PIPE_V before overwriting either table. The input may select between
 two planned buffers. Zero-, one- and two-iteration loops keep the original
 address calculation; dynamic trip counts use a guarded path. No UB allocation
 or hardware-size-specific tensor rewrite is added.

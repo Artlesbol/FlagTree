@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "bishengir/Dialect/HIVM/IR/HIVM.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include <limits>
 #include <optional>
@@ -26,9 +26,9 @@ struct PermuteSource {
   mlir::Value condition;
 };
 
-static mlir::LogicalResult getPermuteStrides(
-    mlir::MemRefType type, llvm::SmallVectorImpl<int64_t> &strides,
-    int64_t &offset) {
+static mlir::LogicalResult
+getPermuteStrides(mlir::MemRefType type,
+                  llvm::SmallVectorImpl<int64_t> &strides, int64_t &offset) {
 #ifdef __LLVM_MAJOR_VERSION_22_COMPATIBLE__
   return type.getStridesAndOffset(strides, offset);
 #else
@@ -86,23 +86,26 @@ static std::optional<PermuteBuffer> resolvePermuteBuffer(mlir::Value value) {
     auto sourceType = cast<MemRefType>(view.getSource().getType());
     SmallVector<int64_t> sourceStrides;
     int64_t sourceOffset;
-    if (!source || failed(getPermuteStrides(sourceType, sourceStrides, sourceOffset)))
+    if (!source ||
+        failed(getPermuteStrides(sourceType, sourceStrides, sourceOffset)))
       return std::nullopt;
     int64_t start = source->address;
     for (auto [i, off] : llvm::enumerate(view.getStaticOffsets())) {
-      if (ShapedType::isDynamic(off) || off < 0 || off >= sourceType.getDimSize(i))
+      if (ShapedType::isDynamic(off) || off < 0 ||
+          off >= sourceType.getDimSize(i))
         return std::nullopt;
       start += off * sourceStrides[i] * bytes;
     }
-    if (start < source->address || start + count * bytes >
-                                      source->address + source->count * bytes)
+    if (start < source->address ||
+        start + count * bytes > source->address + source->count * bytes)
       return std::nullopt;
     return PermuteBuffer{start, count, bytes, source->space};
   }
   return std::nullopt;
 }
 
-static std::optional<PermuteSource> resolvePermuteSource(mlir::Value value, bool aliasOnly = false) {
+static std::optional<PermuteSource>
+resolvePermuteSource(mlir::Value value, bool aliasOnly = false) {
   using namespace mlir;
   if (auto cast = value.getDefiningOp<memref::CastOp>())
     return resolvePermuteSource(cast.getSource(), aliasOnly);
@@ -135,13 +138,15 @@ static bool permuteOverlap(PermuteBuffer a, PermuteBuffer b) {
 
 struct HoistStructuredPermutationAddressesPass
     : mlir::PassWrapper<HoistStructuredPermutationAddressesPass,
-                       mlir::OperationPass<mlir::ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(HoistStructuredPermutationAddressesPass)
+                        mlir::OperationPass<mlir::ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(
+      HoistStructuredPermutationAddressesPass)
   llvm::StringRef getArgument() const final {
     return "hoist-structured-permutation-addresses";
   }
   llvm::StringRef getDescription() const final {
-    return "Reuse private vector permutation address tables across planned UB loops";
+    return "Reuse private vector permutation address tables across planned UB "
+           "loops";
   }
   void runOnOperation() final {
     using namespace mlir;
@@ -155,7 +160,8 @@ struct HoistStructuredPermutationAddressesPass
   }
   void optimize(mlir::func::CallOp call) {
     using namespace mlir;
-    StringRef suffix = call.getCallee().drop_front(StringRef("custom_flagtree_stride_gather_").size());
+    StringRef suffix = call.getCallee().drop_front(
+        StringRef("custom_flagtree_stride_gather_").size());
     if (suffix != "half" && suffix != "bf16" && suffix != "float" &&
         suffix != "int16" && suffix != "int32")
       return;
@@ -167,26 +173,32 @@ struct HoistStructuredPermutationAddressesPass
         call.getNumResults() != 0)
       return;
     llvm::APInt lower, step, upper;
-    if (!matchPattern(loop.getLowerBound(), m_ConstantInt(&lower)) || !lower.isZero() ||
-        !matchPattern(loop.getStep(), m_ConstantInt(&step)) || step.getSExtValue() <= 0 ||
+    if (!matchPattern(loop.getLowerBound(), m_ConstantInt(&lower)) ||
+        !lower.isZero() ||
+        !matchPattern(loop.getStep(), m_ConstantInt(&step)) ||
+        step.getSExtValue() <= 0 ||
         step.getSExtValue() > std::numeric_limits<int32_t>::max() / 2)
       return;
     int64_t threshold = 2 * step.getSExtValue();
-    bool dynamicTrips = !matchPattern(loop.getUpperBound(), m_ConstantInt(&upper));
+    bool dynamicTrips =
+        !matchPattern(loop.getUpperBound(), m_ConstantInt(&upper));
     if (!dynamicTrips && upper.getSExtValue() <= threshold)
       return;
     auto source = resolvePermuteSource(call.getOperand(0));
     auto indices = resolvePermuteBuffer(call.getOperand(1));
     auto destination = resolvePermuteBuffer(call.getOperand(2));
     auto scratch = resolvePermuteBuffer(call.getOperand(3));
-    auto ub = hivm::AddressSpaceAttr::get(&getContext(), hivm::AddressSpace::UB);
-    if (!source || !indices || !destination || !scratch || indices->space != ub ||
-        indices->bytes != 4 || scratch->bytes != 4 ||
+    auto ub =
+        hivm::AddressSpaceAttr::get(&getContext(), hivm::AddressSpace::UB);
+    if (!source || !indices || !destination || !scratch ||
+        indices->space != ub || indices->bytes != 4 || scratch->bytes != 4 ||
         source->first.bytes != destination->bytes ||
         call.getOperand(1).getType() != call.getOperand(3).getType() ||
         indices->count != source->first.count ||
-        indices->count != destination->count || indices->count != scratch->count ||
-        indices->space != source->first.space || indices->space != destination->space ||
+        indices->count != destination->count ||
+        indices->count != scratch->count ||
+        indices->space != source->first.space ||
+        indices->space != destination->space ||
         indices->space != scratch->space ||
         (indices->address | scratch->address | destination->address) % 32 ||
         permuteOverlap(*indices, *scratch))
@@ -221,7 +233,8 @@ struct HoistStructuredPermutationAddressesPass
           continue;
         auto buffer = resolvePermuteBuffer(value);
         if (buffer) {
-          if (permuteOverlap(*buffer, *indices) || permuteOverlap(*buffer, *scratch))
+          if (permuteOverlap(*buffer, *indices) ||
+              permuteOverlap(*buffer, *scratch))
             safe = false;
         } else if (auto alternatives = resolvePermuteSource(value, true)) {
           for (auto b : {alternatives->first, alternatives->second})
@@ -254,18 +267,23 @@ struct HoistStructuredPermutationAddressesPass
                               builder.getI32Type(), builder.getI32Type()}) ||
         !compatible(name, {tableType, call.getOperand(2).getType()}))
       return;
-    auto staticTable = MemRefType::get({indices->count}, builder.getI32Type(), MemRefLayoutAttrInterface{}, indices->space);
+    auto staticTable =
+        MemRefType::get({indices->count}, builder.getI32Type(),
+                        MemRefLayoutAttrInterface{}, indices->space);
     auto pointer = [&](int64_t address) -> Value {
       Value constant = builder.create<arith::ConstantIntOp>(loc, address, 64);
-      Value storage = builder.create<hivm::PointerCastOp>(loc, staticTable, constant);
+      Value storage =
+          builder.create<hivm::PointerCastOp>(loc, staticTable, constant);
       return builder.create<memref::CastOp>(loc, tableType, storage);
     };
-    Value tableA = pointer(indices->address), tableB = pointer(scratch->address);
+    Value tableA = pointer(indices->address),
+          tableB = pointer(scratch->address);
     auto declare = [&](StringRef name, TypeRange types) {
       if (module.lookupSymbol(name))
         return;
       OpBuilder decl(module.getBodyRegion());
-      auto fn = decl.create<func::FuncOp>(loc, name, builder.getFunctionType(types, {}));
+      auto fn = decl.create<func::FuncOp>(loc, name,
+                                          builder.getFunctionType(types, {}));
       fn.setPrivate();
       fn->setAttr("hacc.always_inline", builder.getUnitAttr());
       fn->setAttr("flagtree.structured_address_table", builder.getUnitAttr());
@@ -275,16 +293,18 @@ struct HoistStructuredPermutationAddressesPass
         if (auto kind = old->getAttr("hivm.func_core_type"))
           fn->setAttr("hivm.func_core_type", kind);
     };
-    declare(prepare, {tableType, tableType, builder.getI32Type(), builder.getI32Type(), builder.getI32Type()});
+    declare(prepare, {tableType, tableType, builder.getI32Type(),
+                      builder.getI32Type(), builder.getI32Type()});
     SmallVector<Value> args{tableA, tableB};
-    for (int64_t v : {source->first.bytes, source->first.address, source->second.address})
+    for (int64_t v :
+         {source->first.bytes, source->first.address, source->second.address})
       args.push_back(builder.create<arith::ConstantIntOp>(loc, v, 32));
     Value reuse;
     if (dynamicTrips) {
       Value limit = builder.create<arith::ConstantOp>(
           loc, builder.getIntegerAttr(loop.getStep().getType(), threshold));
       reuse = builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::sgt,
-                                           loop.getUpperBound(), limit);
+                                            loop.getUpperBound(), limit);
       auto guard = builder.create<scf::IfOp>(loc, reuse, false);
       auto inside = guard.getThenBodyBuilder();
       inside.create<func::CallOp>(loc, prepare, TypeRange{}, args);
@@ -294,16 +314,19 @@ struct HoistStructuredPermutationAddressesPass
     builder.setInsertionPoint(call);
     Value chosen = tableA;
     if (source->condition)
-      chosen = builder.create<arith::SelectOp>(loc, source->condition, tableA, tableB);
+      chosen = builder.create<arith::SelectOp>(loc, source->condition, tableA,
+                                               tableB);
     declare(name, {tableType, call.getOperand(2).getType()});
     if (reuse) {
       auto guard = builder.create<scf::IfOp>(loc, reuse, true);
       auto fast = guard.getThenBodyBuilder();
-      fast.create<func::CallOp>(loc, name, TypeRange{}, ValueRange{chosen, call.getOperand(2)});
+      fast.create<func::CallOp>(loc, name, TypeRange{},
+                                ValueRange{chosen, call.getOperand(2)});
       auto slow = guard.getElseBodyBuilder();
       slow.clone(*call);
     } else {
-      builder.create<func::CallOp>(loc, name, TypeRange{}, ValueRange{chosen, call.getOperand(2)});
+      builder.create<func::CallOp>(loc, name, TypeRange{},
+                                   ValueRange{chosen, call.getOperand(2)});
     }
     call.erase();
   }
@@ -311,25 +334,33 @@ struct HoistStructuredPermutationAddressesPass
 
 // A symbolic element offset: only a common SSA base plus a constant is needed
 // to prove that two contiguous GM stores are disjoint.
-struct StoreOffset { mlir::Value base; int64_t constant; };
-static std::optional<StoreOffset> addStoreOffsets(StoreOffset a, StoreOffset b) {
+struct StoreOffset {
+  mlir::Value base;
+  int64_t constant;
+};
+static std::optional<StoreOffset> addStoreOffsets(StoreOffset a,
+                                                  StoreOffset b) {
   if (a.base && b.base)
     return std::nullopt;
-  if ((b.constant > 0 && a.constant > std::numeric_limits<int64_t>::max() - b.constant) ||
-      (b.constant < 0 && a.constant < std::numeric_limits<int64_t>::min() - b.constant))
+  if ((b.constant > 0 &&
+       a.constant > std::numeric_limits<int64_t>::max() - b.constant) ||
+      (b.constant < 0 &&
+       a.constant < std::numeric_limits<int64_t>::min() - b.constant))
     return std::nullopt;
   return StoreOffset{a.base ? a.base : b.base, a.constant + b.constant};
 }
 static std::optional<StoreOffset> resolveStoreOffset(mlir::Value value);
-static std::optional<StoreOffset> resolveStoreExpr(
-    mlir::AffineExpr expr, mlir::affine::AffineApplyOp apply) {
+static std::optional<StoreOffset>
+resolveStoreExpr(mlir::AffineExpr expr, mlir::affine::AffineApplyOp apply) {
   using namespace mlir;
   if (auto c = dyn_cast<AffineConstantExpr>(expr))
     return StoreOffset{{}, c.getValue()};
   if (auto d = dyn_cast<AffineDimExpr>(expr))
     return resolveStoreOffset(apply.getMapOperands()[d.getPosition()]);
   if (auto sym = dyn_cast<AffineSymbolExpr>(expr))
-    return resolveStoreOffset(apply.getMapOperands()[apply.getAffineMap().getNumDims() + sym.getPosition()]);
+    return resolveStoreOffset(
+        apply.getMapOperands()[apply.getAffineMap().getNumDims() +
+                               sym.getPosition()]);
   if (auto binary = dyn_cast<AffineBinaryOpExpr>(expr)) {
     if (binary.getKind() == AffineExprKind::Add) {
       auto a = resolveStoreExpr(binary.getLHS(), apply);
@@ -348,7 +379,8 @@ static std::optional<StoreOffset> resolveStoreOffset(mlir::Value value) {
   if (auto apply = value.getDefiningOp<affine::AffineApplyOp>())
     return resolveStoreExpr(apply.getAffineMap().getResult(0), apply);
   if (auto add = value.getDefiningOp<arith::AddIOp>()) {
-    auto a = resolveStoreOffset(add.getLhs()), b = resolveStoreOffset(add.getRhs());
+    auto a = resolveStoreOffset(add.getLhs()),
+         b = resolveStoreOffset(add.getRhs());
     if (a && b)
       return addStoreOffsets(*a, *b);
     return std::nullopt;
@@ -371,8 +403,10 @@ static std::optional<PlannedStore> getPlannedStore(mlir::Operation *op) {
   if (!matchPattern(call.getOperand(2), m_ConstantInt(&mode)) || !mode.isZero())
     return std::nullopt;
   auto source = dyn_cast<MemRefType>(call.getOperand(0).getType());
-  auto ub = hivm::AddressSpaceAttr::get(op->getContext(), hivm::AddressSpace::UB);
-  auto gm = hivm::AddressSpaceAttr::get(op->getContext(), hivm::AddressSpace::GM);
+  auto ub =
+      hivm::AddressSpaceAttr::get(op->getContext(), hivm::AddressSpace::UB);
+  auto gm =
+      hivm::AddressSpaceAttr::get(op->getContext(), hivm::AddressSpace::GM);
   if (!source || source.getMemorySpace() != ub)
     return std::nullopt;
   Value src = call.getOperand(0);
@@ -387,8 +421,8 @@ static std::optional<PlannedStore> getPlannedStore(mlir::Operation *op) {
   // handling, strided packing, or hidden temporary storage inside the call.
   if (!packedSource.hasStaticShape() || packedSource.getRank() != 1 ||
       failed(getPermuteStrides(packedSource, sourceStrides, sourceOffset)) ||
-      sourceStrides[0] != 1 || ShapedType::isDynamic(sourceOffset) ||
-      !bytes || sourceOffset < 0 || (sourceOffset % 32) * bytes % 32 ||
+      sourceStrides[0] != 1 || ShapedType::isDynamic(sourceOffset) || !bytes ||
+      sourceOffset < 0 || (sourceOffset % 32) * bytes % 32 ||
       (packedSource.getNumElements() * bytes) % 32 || !buffers ||
       buffers->first.address % 32 || buffers->second.address % 32)
     return std::nullopt;
@@ -412,21 +446,27 @@ static std::optional<PlannedStore> getPlannedStore(mlir::Operation *op) {
     offset = StoreOffset{{}, cast<IntegerAttr>(attr).getInt()};
   else
     offset = resolveStoreOffset(cast<Value>(off));
-  if (!offset || offset->constant > std::numeric_limits<int64_t>::max() - type.getNumElements())
+  if (!offset || offset->constant > std::numeric_limits<int64_t>::max() -
+                                        type.getNumElements())
     return std::nullopt;
-  return PlannedStore{view.getSource(), *offset, type.getNumElements(), type.getElementType()};
+  return PlannedStore{view.getSource(), *offset, type.getNumElements(),
+                      type.getElementType()};
 }
-static bool disjointPlannedStores(const PlannedStore &a, const PlannedStore &b) {
-  if (a.allocation != b.allocation || a.element != b.element || a.offset.base != b.offset.base)
+static bool disjointPlannedStores(const PlannedStore &a,
+                                  const PlannedStore &b) {
+  if (a.allocation != b.allocation || a.element != b.element ||
+      a.offset.base != b.offset.base)
     return false;
   return a.offset.constant + a.count <= b.offset.constant ||
          b.offset.constant + b.count <= a.offset.constant;
 }
 struct CoalesceStructuredStoreSyncPass
     : mlir::PassWrapper<CoalesceStructuredStoreSyncPass,
-                       mlir::OperationPass<mlir::ModuleOp>> {
+                        mlir::OperationPass<mlir::ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(CoalesceStructuredStoreSyncPass)
-  llvm::StringRef getArgument() const final { return "coalesce-structured-store-sync"; }
+  llvm::StringRef getArgument() const final {
+    return "coalesce-structured-store-sync";
+  }
   llvm::StringRef getDescription() const final {
     return "Coalesce MTE3-only waits between proven disjoint UB-to-GM stores";
   }
@@ -435,8 +475,9 @@ struct CoalesceStructuredStoreSyncPass
     getOperation().walk([&](func::FuncOp function) {
       bool privatePermutation = false;
       function.walk([&](func::CallOp call) {
-        privatePermutation |= call.getCallee().starts_with("custom_flagtree_stride_gather_") ||
-                              call.getCallee().starts_with("custom_flagtree_addressed_gather_");
+        privatePermutation |=
+            call.getCallee().starts_with("custom_flagtree_stride_gather_") ||
+            call.getCallee().starts_with("custom_flagtree_addressed_gather_");
       });
       if (!privatePermutation)
         return;
@@ -468,7 +509,8 @@ struct CoalesceStructuredStoreSyncPass
           // A read/write, another pipeline synchronization, control flow, or an
           // unknown operation ends the group. Keep the final wait and every
           // cross-pipeline dependency exactly as CANN scheduled them.
-          if (op.getNumRegions() || (!isMemoryEffectFree(&op) && !isa<hivm::PointerCastOp>(&op))) {
+          if (op.getNumRegions() ||
+              (!isMemoryEffectFree(&op) && !isa<hivm::PointerCastOp>(&op))) {
             group.clear();
             pending.clear();
           }

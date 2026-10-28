@@ -203,3 +203,44 @@ The FLIR tests `structured_permutation.mlir` and
 `structured_permutation_encoded.mlir` is a **negative** test: this Ascend pipeline
 consumes unencoded TTIR and must not silently accept TTG distributed encodings.
 Other architectures are checked for IR fallback only, not device execution.
+
+## Persistent-loop performance and paired ablations
+
+After CANN buffer planning, a typed MLIR pass may reuse the existing private
+index and scratch buffers as two absolute address tables. Admission requires
+fixed packed physical layouts, aligned tables/output, nonoverlapping storage,
+and no other consumer or writer of either table. The input may select between
+two planned buffers. Zero-, one- and two-iteration loops keep the original
+address calculation; dynamic trip counts use a guarded path. No UB allocation
+or hardware-size-specific tensor rewrite is added.
+
+A separate pass coalesces MTE3-only waits between direct UB-to-GM stores when
+all destination intervals are proven disjoint relative to the same GM base.
+It requires packed aligned UB sources, full bursts and non-atomic stores.
+Unknown aliases, intervening writes/control flow, other pipeline events, and
+the final wait remain unchanged. Neither pass modifies installed CANN files.
+Both options are boolean and participate in compilation/cache keys; the late
+optimizer binary and transport helpers are hashed too.
+
+For ordinary `bench.py` runs, use `--no-address-hoisting` and/or
+`--no-store-sync-optimization` as compiler controls. For the paired experiment:
+
+```bash
+TRITON_ALL_BLOCKS_PARALLEL=1 python "$bench/bench_paired.py" \
+  --q 256 --batch 2048 --dtype float32 \
+  --library "$out/aiv-build/libpermute_reference.so" \
+  --output "$out/paired-q256-float32.json"
+```
+
+The five variants disable both optimizations, enable addresses only, enable
+store synchronization only, enable both, and run the independent vector AIV
+reference. They share the same input/output buffers in one process. Measurement
+order rotates, every output is verified before capture and after cleared-output
+replay, and all timing rounds and compiler stages are retained. The protocol is
+10 warmups, 5 rounds of 100 graphs, 64 calls per graph. Repeat with dispatch mode
+0 and other supported Q/dtypes; compare modes separately.
+
+Additional regressions are `test_structured_address_hoist.py` (host admission,
+cache options and dependency rejection) and `test_structured_store_values.py`
+(device guards, GM offsets and short/long loop paths). Run both alongside the
+full list above in each dispatch mode.

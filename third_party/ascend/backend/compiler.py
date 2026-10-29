@@ -512,8 +512,15 @@ def get_auto_bind_sub_block_option(metadata):
     # auto_tile_and_bind_subblock is read from the module.
     # enable_auto_bind_sub_block is set by the user and has a higher priority.
     enable_auto_bind_sub_block = metadata["enable_auto_bind_sub_block"]
-    return (metadata["auto_tile_and_bind_subblock"]
-            if enable_auto_bind_sub_block is None else enable_auto_bind_sub_block)
+    if enable_auto_bind_sub_block is not None:
+        return enable_auto_bind_sub_block
+    # CANN 9's sub-block tiler can crash on mixed CV kernels without the
+    # persistent program loop. Keep the user's explicit control independent,
+    # but do not enable this dependent optimization by default in that case.
+    if (metadata.get("mix_mode") == "mix" and metadata.get("enable_auto_blockify") is False
+            and str(metadata.get("arch", "")).startswith("Ascend910B")):
+        return False
+    return metadata["auto_tile_and_bind_subblock"]
 
 
 def _save_npuir_debug_output(stdout_bytes: bytes, stderr_bytes: bytes, tmpdir: str, metadata_hash: str):

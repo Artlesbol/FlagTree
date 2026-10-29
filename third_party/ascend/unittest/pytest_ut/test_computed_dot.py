@@ -6,6 +6,7 @@ import torch
 import torch_npu  # noqa: F401 -- registers the NPU backend
 import triton
 import triton.language as tl
+from triton.backends.ascend.compiler import get_auto_bind_sub_block_option
 import triton.language.extra.cann.extension as al
 
 
@@ -134,6 +135,8 @@ def test_computed_compensated_dot(radix, n, twiddle, materialize, left, auto):
     compiled = launch()
     verify(1.)
     assert str(compiled.asm['ttadapter']).count('memref_ext.alloc_workspace') == 4
+    assert compiled.metadata.uses_computed_dot_transfer
+    assert get_auto_bind_sub_block_option(compiled.metadata._asdict()) is auto
     graph = torch.npu.NPUGraph()
     with torch.npu.graph(graph):
         launch()
@@ -162,7 +165,7 @@ def test_both_dot_inputs_computed(auto):
     a, b = torch.randn(32, 16), torch.randn(16, 32)
     output = torch.empty((32, 32), device='npu')
     compiled = _both_inputs[(1, )](a.npu(), b.npu(), output, num_warps=4, num_stages=1, multibuffer=False,
-                                   enable_auto_blockify=auto, enable_fp_fusion=False)
+                                   enable_auto_blockify=auto, enable_auto_bind_sub_block=True, enable_fp_fusion=False)
     torch.npu.synchronize()
     expected = _cpu_round(a * 1.125).double() @ _cpu_round(b * 0.875).double()
     assert torch.linalg.vector_norm(output.cpu().double() - expected) / torch.linalg.vector_norm(expected) < 5e-7
@@ -190,6 +193,7 @@ def test_loaded_dot_keeps_native_path(dtype, auto):
     torch.npu.synchronize()
     assert torch.equal(output.cpu().double(), a.double() @ b.double())
     assert 'memref_ext.alloc_workspace' not in str(compiled.asm['ttadapter'])
+    assert not compiled.metadata.uses_computed_dot_transfer
 
 
 @triton.jit

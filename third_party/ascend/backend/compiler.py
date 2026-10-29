@@ -437,6 +437,7 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     # Parse all bitcode paths
     bitcodes = re.findall(BITCODES_REGEX, linalg)
     metadata["bitcodes"] = [val for group in bitcodes for val in group if val]
+    metadata["uses_computed_dot_transfer"] = "flagtree.vector_to_cube" in linalg
     metadata["uses_structured_permutation"] = any(
         name in linalg for name in ("custom_flagtree_stride_gather_", "custom_flagtree_split_",
                                     "custom_flagtree_byte_to_word", "custom_flagtree_word_to_byte",
@@ -509,18 +510,16 @@ def get_common_bishengir_compile_options(metadata):
 
 
 def get_auto_bind_sub_block_option(metadata):
+    # CANN 9's sub-block slice propagation crashes on this unblocked graph.
+    # This is pass eligibility, including when enabling the optional tiler was
+    # explicitly requested. Keep its normal defaults for all other kernels.
+    if metadata.get("uses_computed_dot_transfer") and metadata.get("enable_auto_blockify") is False:
+        return False
     # auto_tile_and_bind_subblock is read from the module.
     # enable_auto_bind_sub_block is set by the user and has a higher priority.
     enable_auto_bind_sub_block = metadata["enable_auto_bind_sub_block"]
-    if enable_auto_bind_sub_block is not None:
-        return enable_auto_bind_sub_block
-    # CANN 9's sub-block tiler can crash on mixed CV kernels without the
-    # persistent program loop. Keep the user's explicit control independent,
-    # but do not enable this dependent optimization by default in that case.
-    if (metadata.get("mix_mode") == "mix" and metadata.get("enable_auto_blockify") is False
-            and str(metadata.get("arch", "")).startswith("Ascend910B")):
-        return False
-    return metadata["auto_tile_and_bind_subblock"]
+    return (metadata["auto_tile_and_bind_subblock"]
+            if enable_auto_bind_sub_block is None else enable_auto_bind_sub_block)
 
 
 def _save_npuir_debug_output(stdout_bytes: bytes, stderr_bytes: bytes, tmpdir: str, metadata_hash: str):

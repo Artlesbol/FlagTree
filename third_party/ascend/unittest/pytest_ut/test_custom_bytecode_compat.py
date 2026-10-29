@@ -210,17 +210,17 @@ def test_short_row_load_abi(suffix, element, block, padded):
         late.lower_private_ops(text.replace(types[2], types[2].replace('256xi32', '0xi32')))
 
 
-@pytest.mark.parametrize('mode,arch,auto,explicit,module,expected', [
-    ('mix', 'Ascend910B4', False, None, True, False),
-    ('mix', 'Ascend910B4', False, True, True, True),
-    ('mix', 'Ascend910B4', False, False, True, False),
-    ('mix', 'Ascend910B4', True, None, True, True),
-    ('mix', 'Ascend910B4', True, None, False, False),
-    ('aiv', 'Ascend910B4', False, None, True, True),
-    ('aic', 'Ascend910B4', False, None, True, True),
-    ('mix', 'Ascend910_95', False, None, True, True),
+@pytest.mark.parametrize('computed,auto,explicit,module,expected', [
+    (True, False, None, True, False),
+    (True, False, True, True, False),
+    (True, False, False, True, False),
+    (True, True, None, True, True),
+    (True, True, False, True, False),
+    (False, False, None, True, True),
+    (False, False, True, False, True),
+    (False, True, None, False, False),
 ])
-def test_mixed_cv_subblock_default(mode, arch, auto, explicit, module, expected):
-    metadata = dict(mix_mode=mode, arch=arch, enable_auto_blockify=auto, enable_auto_bind_sub_block=explicit,
+def test_computed_dot_subblock_admission(computed, auto, explicit, module, expected):
+    metadata = dict(uses_computed_dot_transfer=computed, enable_auto_blockify=auto, enable_auto_bind_sub_block=explicit,
                     auto_tile_and_bind_subblock=module)
     assert compiler.get_auto_bind_sub_block_option(metadata) is expected

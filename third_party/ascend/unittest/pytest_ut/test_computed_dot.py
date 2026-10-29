@@ -167,3 +167,51 @@ def test_both_dot_inputs_computed(auto):
     expected = _cpu_round(a * 1.125).double() @ _cpu_round(b * 0.875).double()
     assert torch.linalg.vector_norm(output.cpu().double() - expected) / torch.linalg.vector_norm(expected) < 5e-7
     assert str(compiled.asm['ttadapter']).count('memref_ext.alloc_workspace') == 2
+
+
+@triton.jit
+def _loaded_inputs(A, B, C):
+    r = tl.arange(0, 32)[:, None]
+    k = tl.arange(0, 16)[None, :]
+    a = tl.load(A + r * 16 + k)
+    b = tl.load(B + tl.trans(k) * 32 + tl.trans(r))
+    tl.store(C + r * 32 + tl.arange(0, 32)[None, :], tl.dot(a, b, input_precision='hf32'))
+
+
+@pytest.mark.parametrize('dtype', [torch.float16, torch.bfloat16, torch.float32])
+@pytest.mark.parametrize('auto', [False, True])
+def test_loaded_dot_keeps_native_path(dtype, auto):
+    # Exactly HF32-representable inputs also provide a strict FP32 oracle.
+    a = (torch.arange(512).remainder(31).float().reshape(32, 16) / 8).to(dtype)
+    b = (torch.arange(512).remainder(23).float().reshape(16, 32) / 8).to(dtype)
+    output = torch.empty((32, 32), device='npu')
+    compiled = _loaded_inputs[(1, )](a.npu(), b.npu(), output, num_warps=4, num_stages=1, multibuffer=False,
+                                     enable_auto_blockify=auto, enable_fp_fusion=False)
+    torch.npu.synchronize()
+    assert torch.equal(output.cpu().double(), a.double() @ b.double())
+    assert 'memref_ext.alloc_workspace' not in str(compiled.asm['ttadapter'])
+
+
+@triton.jit
+def _batched_input(A, B, C):
+    batch = tl.arange(0, 2)[:, None, None]
+    r = tl.arange(0, 32)[None, :, None]
+    k = tl.arange(0, 16)[None, None, :]
+    a = _rounded(tl.load(A + batch * 512 + r * 16 + k) * 1.125)
+    b = tl.load(B + batch * 512 + tl.arange(0, 16)[None, :, None] * 32 + tl.arange(0, 32)[None, None, :])
+    value = tl.dot(a, b, input_precision='hf32')
+    tl.store(C + batch * 1024 + r * 32 + tl.arange(0, 32)[None, None, :], value)
+
+
+@pytest.mark.parametrize('auto', [False, True])
+def test_batched_computed_dot(auto):
+    torch.manual_seed(2429)
+    a = torch.randn(2, 32, 16)
+    b = _cpu_round(torch.randn(2, 16, 32))
+    output = torch.empty((2, 32, 32), device='npu')
+    compiled = _batched_input[(1, )](a.npu(), b.npu(), output, num_warps=4, num_stages=1, multibuffer=False,
+                                     enable_auto_blockify=auto, enable_fp_fusion=False)
+    torch.npu.synchronize()
+    expected = _cpu_round(a * 1.125).double() @ b.double()
+    assert torch.linalg.vector_norm(output.cpu().double() - expected) / torch.linalg.vector_norm(expected) < 5e-7
+    assert str(compiled.asm['ttadapter']).count('memref_ext.alloc_workspace') == 1

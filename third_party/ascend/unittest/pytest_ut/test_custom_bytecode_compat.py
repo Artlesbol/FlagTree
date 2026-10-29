@@ -208,3 +208,19 @@ def test_short_row_load_abi(suffix, element, block, padded):
         late.lower_private_ops(text.replace(types[0], types[0].replace(gm, ub)))
     with pytest.raises(ValueError, match='workspaces'):
         late.lower_private_ops(text.replace(types[2], types[2].replace('256xi32', '0xi32')))
+
+
+@pytest.mark.parametrize('mode,arch,auto,explicit,module,expected', [
+    ('mix', 'Ascend910B4', False, None, True, False),
+    ('mix', 'Ascend910B4', False, True, True, True),
+    ('mix', 'Ascend910B4', False, False, True, False),
+    ('mix', 'Ascend910B4', True, None, True, True),
+    ('mix', 'Ascend910B4', True, None, False, False),
+    ('aiv', 'Ascend910B4', False, None, True, True),
+    ('aic', 'Ascend910B4', False, None, True, True),
+    ('mix', 'Ascend910_95', False, None, True, True),
+])
+def test_mixed_cv_subblock_default(mode, arch, auto, explicit, module, expected):
+    metadata = dict(mix_mode=mode, arch=arch, enable_auto_blockify=auto, enable_auto_bind_sub_block=explicit,
+                    auto_tile_and_bind_subblock=module)
+    assert compiler.get_auto_bind_sub_block_option(metadata) is expected

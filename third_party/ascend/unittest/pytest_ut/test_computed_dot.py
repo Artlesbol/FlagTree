@@ -1,4 +1,4 @@
-"""Bitcast-derived vector values must reach Cube through valid GM/L1 buffers."""
+"""Vector values must reach Cube through valid GM/L1 buffers."""
 import math
 
 import pytest
@@ -219,3 +219,82 @@ def test_batched_computed_dot(auto):
     expected = _cpu_round(a * 1.125).double() @ b.double()
     assert torch.linalg.vector_norm(output.cpu().double() - expected) / torch.linalg.vector_norm(expected) < 5e-7
     assert str(compiled.asm['ttadapter']).count('memref_ext.alloc_workspace') == 1
+
+
+@triton.jit
+def _split_dot(X, W, Y, Side, K: tl.constexpr, N: tl.constexpr, LEFT: tl.constexpr, MATERIALIZE: tl.constexpr,
+               PRECISION: tl.constexpr):
+    batch = tl.program_id(0)
+    r = tl.arange(0, K)[:, None]
+    c = tl.arange(0, 2 * N)[None, :]
+    raw = tl.load(X + batch * 2 * K * N + r * 2 * N + c)
+    first, second = tl.split(tl.reshape(raw, (K * N, 2)))
+    first, second = tl.reshape(first, (K, N)), tl.reshape(second, (K, N))
+    if MATERIALIZE:
+        first, second = first + 0., second + 0.
+    # A live Vector consumer must retain the original UB value.
+    offset = r * N + tl.arange(0, N)[None, :]
+    tl.store(Side + batch * K * N + offset, first)
+    row = tl.arange(0, 2 * K)
+    k = tl.arange(0, K)
+    if LEFT:
+        a = tl.load(W + row[None, :] * 2 * K + k[:, None])
+        b = tl.load(W + row[None, :] * 2 * K + K + k[:, None])
+        first, second = tl.trans(first), tl.trans(second)
+        value = tl.dot(first, a, input_precision=PRECISION)
+        value = tl.dot(second, b, acc=value, input_precision=PRECISION)
+        # The repeated SSA input must reuse its first transfer.
+        value = tl.dot(first, a, acc=value, input_precision=PRECISION)
+        value = tl.trans(value)
+    else:
+        a = tl.load(W + row[:, None] * 2 * K + k[None, :])
+        b = tl.load(W + row[:, None] * 2 * K + K + k[None, :])
+        value = tl.dot(a, first, input_precision=PRECISION)
+        value = tl.dot(b, second, acc=value, input_precision=PRECISION)
+        value = tl.dot(a, first, acc=value, input_precision=PRECISION)
+    tl.store(Y + batch * 2 * K * N + row[:, None] * N + tl.arange(0, N)[None, :], value)
+
+
+@pytest.mark.parametrize('k,n', [(16, 64), (32, 128)])
+@pytest.mark.parametrize('left,materialize', [(False, False), (True, False), (False, True)])
+@pytest.mark.parametrize('precision', ['ieee', 'hf32'])
+@pytest.mark.parametrize('auto', [False, True])
+def test_split_dot_accumulation(k, n, left, materialize, precision, auto):
+    torch.manual_seed(3429)
+    batch, guard = 41, 32
+    # Exactly representable values keep the IEEE and HF32 oracles identical.
+    x = torch.randint(-31, 32, (batch, k, n, 2)).float() / 8
+    w = torch.randint(-15, 16, (2 * k, 2 * k)).float() / 16
+    source, weights = x.npu(), w.npu()
+    storage = torch.full((batch * 2 * k * n + 2 * guard, ), -111., device='npu')
+    side_storage = torch.full((batch * k * n + 2 * guard, ), -111., device='npu')
+    output, side = storage[guard:-guard], side_storage[guard:-guard]
+    expected = 2 * (w[:, :k].double() @ x[..., 0].double()) + w[:, k:].double() @ x[..., 1].double()
+    options = dict(num_warps=4, num_stages=1, multibuffer=False, enable_auto_blockify=auto, enable_fp_fusion=False)
+
+    def launch():
+        return _split_dot[(batch, )](source, weights, output, side, k, n, left, materialize, precision, **options)
+
+    def verify(scale):
+        torch.npu.synchronize()
+        assert torch.equal(output.cpu().reshape(batch, 2 * k, n).double(), expected * scale)
+        assert torch.equal(side.cpu().reshape(batch, k, n), x[..., 0] * scale)
+        for buffer in (storage, side_storage):
+            assert torch.all(buffer[:guard].cpu() == -111.)
+            assert torch.all(buffer[-guard:].cpu() == -111.)
+
+    compiled = launch()
+    verify(1.)
+    assert str(compiled.asm['ttadapter']).count('memref_ext.alloc_workspace') == 2
+    assert compiled.metadata.uses_computed_dot_transfer
+    assert get_auto_bind_sub_block_option(compiled.metadata._asdict()) is auto
+    graph = torch.npu.NPUGraph()
+    with torch.npu.graph(graph):
+        launch()
+    for scale in (2.**-20, 2.**20, 1.):
+        source.copy_((x * scale).npu())
+        storage.fill_(-111.)
+        side_storage.fill_(-111.)
+        graph.replay()
+        verify(scale)
+    assert torch.equal(source.cpu(), x)

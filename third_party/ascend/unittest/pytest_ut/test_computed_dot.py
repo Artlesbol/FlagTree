@@ -17,7 +17,7 @@ def _rounded(x):
 
 @triton.jit
 def _compensated(X, T, W, Y, Side, K: tl.constexpr, N: tl.constexpr, R: tl.constexpr, LEFT: tl.constexpr,
-                 TWIDDLE: tl.constexpr):
+                 TWIDDLE: tl.constexpr, MATERIALIZE: tl.constexpr):
     batch = tl.program_id(1)
     r = tl.arange(0, K)[:, None]
     c = tl.arange(0, N)[None, :]
@@ -34,6 +34,9 @@ def _compensated(X, T, W, Y, Side, K: tl.constexpr, N: tl.constexpr, R: tl.const
     lo_i = _rounded(xi - hi_i)
     # A live Vector consumer must keep its UB value, independent of L1 copies.
     tl.store(Side + batch * K * N + offset, hi_r)
+    if MATERIALIZE:
+        hi_r, lo_r = hi_r + 0., lo_r + 0.
+        hi_i, lo_i = hi_i + 0., lo_i + 0.
     row = tl.arange(0, 2 * K)
     k = tl.arange(0, K)
     if LEFT:
@@ -75,10 +78,11 @@ def _cpu_round(x):
     return ((bits + 4095 + ((bits >> 13) & 1)) & -8192).view(torch.float32)
 
 
-@pytest.mark.parametrize('radix,n,twiddle', [(15, 256, True), (17, 128, False), (8, 64, True)])
+@pytest.mark.parametrize('radix,n,twiddle,materialize', [(15, 256, True, False), (17, 128, False, False),
+                                                         (8, 64, True, False), (15, 128, True, True)])
 @pytest.mark.parametrize('left', [False, True])
 @pytest.mark.parametrize('auto', [False, True])
-def test_computed_compensated_dot(radix, n, twiddle, left, auto):
+def test_computed_compensated_dot(radix, n, twiddle, materialize, left, auto):
     torch.manual_seed(20429)
     k, batch, guard = max(16, triton.next_power_of_2(radix)), 41, 32
     x = torch.randn(batch, 2, k, n)
@@ -105,7 +109,8 @@ def test_computed_compensated_dot(radix, n, twiddle, left, auto):
     options = dict(num_warps=4, num_stages=1, multibuffer=False, enable_auto_blockify=auto, enable_fp_fusion=False)
 
     def launch():
-        return _compensated[(1, batch)](source, tw, weights, output, side, k, n, radix, left, twiddle, **options)
+        return _compensated[(1, batch)](source, tw, weights, output, side, k, n, radix, left, twiddle, materialize,
+                                        **options)
 
     def verify(scale):
         torch.npu.synchronize()
